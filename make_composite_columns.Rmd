@@ -1,0 +1,226 @@
+---
+title: "ADD COMPOSITE COLUMNS TO DATA SET"
+output: html_document
+date: "2023-09-06"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE, warning=FALSE)
+```
+
+```{r}
+#library(ggplot2)
+library(dplyr)
+library(tidyr)
+library(here)
+library(forcats)
+library(naniar)
+library(haven)
+#library(MatchIt)
+#library(table1)
+library(rlang)
+#library(devtools)
+library(pewmethods)
+library(foreign)
+#library(cobalt)
+#library(WeightIt)
+#library(survey)
+```
+
+```{r}
+W_wide <- read.spss(here("data","pewMH_dataset_merged.sav"), to.data.frame = TRUE) 
+
+```
+#make composite variables
+
+# W64 job loss 
+```{r}
+#YOU OR SOMEONE IN YOUR HOUSEHOLD was LAID OFF OR LOST A JOB (a) OR HAD TO TAKE A PAY CUT DUE TO REDUCED HOURS OR DEMAND (b) because of the coronavirus outbreak
+
+W_wide <- W_wide %>% mutate(
+  "COVIDWORK_W64_neither_na" = case_when(
+    is.na(COVIDWORK_a_W64) | is.na(COVIDWORK_b_W64) ~ 0,
+    TRUE ~ 1),
+  "COVIDWORK_W64_both_not_na" = case_when(
+    is.na(COVIDWORK_a_W64) & is.na(COVIDWORK_b_W64) ~ 0,
+    TRUE ~ 1),
+  "COVIDWORK_comp_W64" = fct_case_when(
+    is.na(COVIDWORK_a_W64) & is.na(COVIDWORK_b_W64) ~ "Refused/Missing",
+    COVIDWORK_a_W64 == "Yes, has happened" | COVIDWORK_b_W64 == "Yes, has happened" ~ "Yes, has happened",
+    TRUE ~ "No, has not happened"),
+ "COVIDWORK_comp_bin_W64" = case_when(
+    is.na(COVIDWORK_a_W64) & is.na(COVIDWORK_b_W64) ~ NA,
+    COVIDWORK_a_W64 == "Yes, has happened" | COVIDWORK_b_W64 == "Yes, has happened" ~ 1,
+    TRUE ~ 0))
+
+W_wide %>% group_by(F_RESPONDED_W64,COVIDWORK_W64_both_not_na,COVIDWORK_W64_neither_na,COVIDWORK_comp_bin_W64,COVIDWORK_a_W64,COVIDWORK_b_W64) %>% summarize(n()) %>% arrange(desc(COVIDWORK_comp_bin_W64))
+                                                                   
+#W_wide %>% group_by(COVIDWORK_b_W64) %>% summarize(n())
+#W_wide %>% group_by(COVIDWORK_b_bin_W64) %>% summarize(n())
+```
+
+
+```{r}
+
+W_wide <- W_wide %>% mutate(
+  "COVIDWORKR_comp_W72" =case_when(
+  is.na(COVIDWORKR_a_W72) & is.na(COVIDWORKR_b_W72) ~ "Refused/Missing",
+  COVIDWORKR_a_W72 == "Yes, has happened" | COVIDWORKR_b_W72== "Yes, has happened" ~ "Yes, has happened",
+  COVIDWORKR_a_W72 == "No, has not happened" | COVIDWORKR_b_W72== "No, has not happened" ~ "No, has not happened",
+  COVIDWORKR_a_W72 == "Not applicable (not employed)" | COVIDWORKR_b_W72== "Not applicable (not employed)" ~ "Not applicable (not employed)"
+))
+
+W_wide %>% group_by(F_RESPONDED_W72,COVIDWORKR_comp_W72,COVIDWORKR_a_W72,COVIDWORKR_b_W72) %>% summarize(n())
+
+W_wide <- W_wide %>% mutate(
+  "COVIDWORKO_comp_W72" =case_when(
+  is.na(COVIDWORKO_a_W72) & is.na(COVIDWORKO_b_W72) ~ "Refused/Missing",
+  COVIDWORKO_a_W72 == "Yes, has happened" | COVIDWORKO_b_W72== "Yes, has happened" ~ "Yes, has happened",
+  COVIDWORKO_a_W72 == "No, has not happened" | COVIDWORKO_b_W72== "No, has not happened" ~ "No, has not happened",
+  COVIDWORKO_a_W72 == "Not applicable (not employed)" | COVIDWORKO_b_W72== "Not applicable (not employed)" ~ "Not applicable (not employed)"
+))
+
+W_wide %>% group_by(F_RESPONDED_W72,COVIDWORKO_comp_W72,COVIDWORKO_a_W72,COVIDWORKO_b_W72) %>% summarize(n())
+
+W_wide <- W_wide %>% mutate(
+"COVIDWORK_comp_W72" = case_when(
+  COVIDWORKO_comp_W72 == "Refused/Missing" & COVIDWORKR_comp_W72=="Refused/Missing"~ "Refused/Missing",
+  COVIDWORKO_comp_W72 == "Yes, has happened" | COVIDWORKR_comp_W72== "Yes, has happened" ~ "Yes, has happened",
+  COVIDWORKO_comp_W72 == "No, has not happened" | COVIDWORKR_comp_W72== "No, has not happened" ~ "No, has not happened",
+  COVIDWORKO_comp_W72 == "Not applicable (not employed)" | COVIDWORKR_comp_W72== "Not applicable (not employed)" ~ "Not applicable (not employed)"),
+"COVIDWORK_comp_bin_W72" = case_when(
+  COVIDWORK_comp_W72 == "Yes, has happened" ~ 1,
+  COVIDWORK_comp_W72 == "No, has not happened" ~ 0))
+
+W_wide %>% group_by(F_RESPONDED_W72,COVIDWORK_comp_W72,COVIDWORKR_comp_W72,COVIDWORKO_comp_W72) %>% summarize(n())
+
+W_wide <- W_wide %>% mutate("group" = factor(case_when(
+  COVIDWORK_comp_bin_W64 ==1 ~ "By Mar 24, 2020",
+  COVIDWORK_comp_bin_W72 == 1 ~"Between Mar 24-Aug 16, 2020",
+  COVIDWORK_comp_bin_W64==0 & COVIDWORK_comp_bin_W72 == 0 ~ "Neither"),levels=c("By Mar 24, 2020","Between Mar 24-Aug 16, 2020","Neither")))
+```
+
+# Covariates
+```{r}
+#FINANCIAL STRAIN: WORRYS EVERYDAY OR ALMOST EVERY DAY
+W_wide <- W_wide %>% mutate("WORRY2c_comp_W54" = fct_case_when(
+ WORRY2c_W54 == "Every day" | WORRY2c_W54 == "Almost every day" ~ "Yes",
+ WORRY2c_W54 == "Sometimes" | WORRY2c_W54 == "Rarely" | WORRY2c_W54 == "Never" ~ "No",
+ TRUE ~ "Refused/Missing"))
+
+#W_wide %>% group_by(WORRY2c_comp_W54,WORRY2c_W54) %>% summarize(n())
+```
+
+
+```{r}
+# COMBINED DEBT COLUMNS
+# secure debt: mortgage/home loans (d) or car loans (b)
+# insecure debt: credit card (a), student loans (c) or medical debt (e)),
+W_wide <- W_wide %>% 
+  mutate("DEBT_SECURE_W54" = fct_case_when(
+    DEBTb_W54 == "Yes, have this" | DEBTd_W54 == "Yes, have this" ~ "Yes",
+    DEBTb_W54 == "No, do not have this" | DEBTd_W54 == "No, do not have this" ~ "No")) %>% 
+  mutate("DEBT_INSECURE_W54" = fct_case_when(
+   DEBTa_W54 == "Yes, have this" | DEBTc_W54 == "Yes, have this" | DEBTe_W54 == "Yes, have this"  ~ "Yes",
+   DEBTa_W54 == "No, do not have this" | DEBTc_W54 == "No, do not have this" | DEBTe_W54 == "No, do not have this" ~ "No"))
+
+W_wide %>% group_by(DEBT_SECURE_W54,DEBTb_W54,DEBTd_W54) %>% summarize(n())
+W_wide %>% group_by(DEBT_INSECURE_W54,DEBTa_W54,DEBTc_W54,DEBTe_W54) %>% summarize(n())
+```
+
+```{r}
+W_wide <- W_wide %>% mutate(FINANCEa_W54=fct_case_when(FINANCEa_W54=="Yes, have this" ~ "Yes",
+                                                        FINANCEa_W54=="No, do not have this" ~ "No"))
+
+W_wide %>% count(FINANCEa_W54)
+```
+
+
+
+```{r}
+#COMBINE SEPARATED AND DIVORCED 
+W_wide <- W_wide %>% mutate("F_MARITALMOD_W54" = fct_case_when(
+  F_MARITAL_W54 == "Divorced" | F_MARITAL_W54 == "Separated" ~ "Divorced or Separated",
+  TRUE ~  F_MARITAL_W54))
+
+W_wide <- W_wide %>% mutate("F_MARITALMOD_W64" = fct_case_when(
+  F_MARITAL_W64 == "Divorced" | F_MARITAL_W64 == "Separated" ~ "Divorced or Separated",
+  TRUE ~  F_MARITAL_W64))
+```
+
+
+#MENTAL HEALTH OUTCOMES
+
+```{r}
+W_wide <- W_wide %>% mutate(
+  
+  any_MH_na_W64=is.na(MH_TRACK_a_W64) | is.na(MH_TRACK_b_W64) | is.na(MH_TRACK_c_W64) | is.na(MH_TRACK_d_W64) | is.na(MH_TRACK_e_W64),
+  any_MH_na_W83=is.na(MH_TRACK_a_W83) | is.na(MH_TRACK_b_W83) | is.na(MH_TRACK_c_W83) | is.na(MH_TRACK_d_W83) | is.na(MH_TRACK_e_W83),
+  any_MH_na_W114=is.na(MH_TRACK_a_W114) | is.na(MH_TRACK_b_W114) | is.na(MH_TRACK_c_W114) | is.na(MH_TRACK_d_W114) | is.na(MH_TRACK_e_W114),                     
+  any_MH_na = as.integer(any_MH_na_W64 | any_MH_na_W83 | any_MH_na_W114),
+  
+  MH_TRACK_int_a_W64=as.integer(MH_TRACK_a_W64) - 1,
+  #MH_TRACK_int_a_W66=as.integer(MH_TRACK_a_W66) - 1,
+  MH_TRACK_int_a_W83=as.integer(MH_TRACK_a_W83) - 1,
+  MH_TRACK_int_a_W114=as.integer(MH_TRACK_a_W114) - 1,
+  
+  MH_TRACK_int_b_W64=as.integer(MH_TRACK_b_W64) - 1,
+  #MH_TRACK_int_b_W66=as.integer(MH_TRACK_b_W66) - 1,
+  MH_TRACK_int_b_W83=as.integer(MH_TRACK_b_W83) - 1,
+  MH_TRACK_int_b_W114=as.integer(MH_TRACK_b_W114) - 1,
+  
+  MH_TRACK_int_c_W64=as.integer(MH_TRACK_c_W64) - 1,
+  #MH_TRACK_int_c_W66=as.integer(MH_TRACK_c_W66) - 1,
+  MH_TRACK_int_c_W83=as.integer(MH_TRACK_c_W83) - 1,
+  MH_TRACK_int_c_W114=as.integer(MH_TRACK_c_W114) - 1,
+  
+  MH_TRACK_int_e_W64=as.integer(MH_TRACK_e_W64) - 1,
+  #MH_TRACK_int_e_W66=as.integer(MH_TRACK_e_W66) - 1,
+  MH_TRACK_int_e_W83=as.integer(MH_TRACK_e_W83) - 1,
+  MH_TRACK_int_e_W114=as.integer(MH_TRACK_e_W114) - 1,
+  
+  MH_TRACK_int_d_W64=case_when(
+    MH_TRACK_d_W64 == "Rarely or none of the time (less than 1 day)" ~ 3,
+    MH_TRACK_d_W64 == "Some or a little of the time (1-2 days)" ~ 2,
+    MH_TRACK_d_W64 == "Occasionally or a moderate amount of time (3-4 days)" ~ 1,
+    MH_TRACK_d_W64 == "Most or all of the time (5-7 days)" ~ 0),
+  
+  #MH_TRACK_int_d_W66=case_when(
+  #  MH_TRACK_d_W66 == "Rarely or none of the time (less than 1 day)" ~ 3,
+  #  MH_TRACK_d_W66 == "Some or a little of the time (1-2 days)" ~ 2,
+  #  MH_TRACK_d_W66 == "Occasionally or a moderate amount of time (3-4 days)" ~ 1,
+  #  MH_TRACK_d_W66 == "Most or all of the time (5-7 days)" ~ 0),
+  
+  # HOPE (d) IS REVERSE CODED
+  MH_TRACK_int_d_W83=case_when(
+    MH_TRACK_d_W83 == "Rarely or none of the time (less than 1 day)" ~ 3,
+    MH_TRACK_d_W83 =="Some or a little of the time (1-2 days)" ~ 2,
+    MH_TRACK_d_W83 =="Occasionally or a moderate amount of time (3-4 days)" ~ 1,
+    MH_TRACK_d_W83 =="Most or all of the time (5-7 days)" ~ 0),
+  
+  MH_TRACK_int_d_W114=case_when(
+    MH_TRACK_d_W114 =="Rarely or none of the time (less than 1 day)" ~ 3,
+    MH_TRACK_d_W114 =="Some or a little of the time (1-2 days)" ~ 2,
+    MH_TRACK_d_W114 =="Occasionally or a moderate amount of time (3-4 days)" ~ 1,
+    MH_TRACK_d_W114 == "Most or all of the time (5-7 days)" ~ 0),
+
+  MH_TRACK_int_W64= MH_TRACK_int_a_W64 + MH_TRACK_int_b_W64 + MH_TRACK_int_c_W64 + MH_TRACK_int_d_W64+ MH_TRACK_int_e_W64,
+  
+  #MH_TRACK_int_W66= MH_TRACK_int_a_W66 + MH_TRACK_int_b_W66 + MH_TRACK_int_c_W66 + MH_TRACK_int_d_W66+ MH_TRACK_int_e_W66,
+                            
+  MH_TRACK_int_W83= MH_TRACK_int_a_W83 + MH_TRACK_int_b_W83 + MH_TRACK_int_c_W83 + MH_TRACK_int_d_W83+ MH_TRACK_int_e_W83,
+                             
+  MH_TRACK_int_W114= MH_TRACK_int_a_W114 + MH_TRACK_int_b_W114 + MH_TRACK_int_c_W114 + MH_TRACK_int_d_W114+ MH_TRACK_int_e_W114)
+
+W_wide %>% group_by(MH_TRACK_int_a_W64,MH_TRACK_a_W64) %>% summarize(n())
+W_wide %>% group_by(MH_TRACK_int_d_W64,MH_TRACK_d_W64) %>% summarize(n())
+```
+
+
+```{r}
+#write.dta(W_wide, file.path("/Users","graceringlein","OneDrive - Johns Hopkins","PewMH","data","pewMH_dataset_merged_comp_090623.dta"))
+write_sav(W_wide, here("data","pewMH_dataset_merged_comp.sav"))
+```
+
+
+
