@@ -1,59 +1,178 @@
 ---
 title: "PEW income / job loss and psychological distress analysis"
 author: "Grace Ringlein"
-date: "2023-07-21"
+date: "2023-11-1"
 output:
-  pdf_document: default
   html_document: default
+  pdf_document: default
 ---
 
 ```{r setup, include=FALSE}
-knitr::opts_chunk$set(echo = FALSE)
+knitr::opts_chunk$set(warning=FALSE)
+```
+
+# Setup
+
+```{r libs, warning=FALSE,message=FALSE}
 library(gtsummary)
 library(foreign)
-library("marginaleffects")
+#library("marginaleffects")
 library(survey)
 library(haven)
-library(see)
-library(VGAM)
+#library(see)
+#library(VGAM)
 library(ggplot2)
 library(cobalt)
 library(WeightIt)
 library(tidyverse)
 library(here)
-library(glmglrt)
-library(OddsPlotty)
+#library(glmglrt)
+#library(OddsPlotty)
+library(EValue)
 ```
 
-# Setup
 ## Read in data
-```{r,echo=FALSE}
+
+```{r}
 W_wide <- read.spss(here("data","pewMH_dataset_merged_comp.sav"),to.data.frame = TRUE)
 fig_path <- here("figures")
 ```
 
 ## Vars of interest
+
+
+### Demographics
+
 ```{r}
-demographics <- c("F_SEX_W64","F_AGECAT_W64","F_RACETHN_W64","F_MARITALMOD_W64", "F_EDUCCAT2_W64","F_PARENT_W54","F_CITIZEN_W64", "F_CREGION_W64","F_METRO_W64")
-lt <- "COVID_MENTAL_W64"
-financial<-c("INC_TIER2_W54","WORRY2c_comp_W54","F_E3_W54","FINANCEa_W54","DEBT_SECURE_W54","DEBT_INSECURE_W54")
-exp <- "COVIDWORK_comp_bin_W72"
-weights <- "WEIGHT_W54_64_72_83_114"
+demographics <- 
+  c("F_SEX_W64", # Sex (male or female)
+    "F_AGECAT_W64", # Age (categorical)
+    "F_RACETHN_W64", # Race and ethnicity (categorical)
+    "F_MARITALMOD_W64", # Marital status (mod. combining divorced and separated)
+    "F_EDUCCAT2_W64", # Education level
+    "F_PARENT_W54", # Parent of a child under 18
+    "F_CITIZEN_W64", # U.S. Citizen (yes/no)
+    "F_CREGION_W64", # Census region (categorical)
+    "F_METRO_W64" # Indicator of living in a metropolitan area
+    )
+```
+
+### Life time diagnosis of mental illness
+
+```{r}
+lt <- "COVID_MENTAL_W64" # Life time diagnosis of mental health condition
+```
+
+### Financial Covariates
+
+```{r}
+financial <-
+  c("INC_TIER2_W54", # Income tier (lower, middle, upper)
+    "WORRY2c_comp_W54", # Financial strain (indicator, worries about bills every day/almost every day )
+    "F_E3_W54", # Employment (Full-time, part-time, unemployed)
+    "FINANCEa_W54", # Has savings account?
+    "DEBT_SECURE_W54", # Has secure debt (composite indicator)
+    "DEBT_INSECURE_W54") # Has insecure debt (composite indicator)
+```
+
+### Income or job loss variable
+```{r}
+exp <- "COVIDWORK_comp_bin_W72" # self or household job or income loss (composite indicator)
+```
+
+### Psychological distress 
+```{r}
+distress <- c("MH_TRACK_int_W64","MH_TRACK_int_W83","MH_TRACK_int_W114") 
+pre_exp <- "MH_TRACK_int_W64"
+```
+
+### Propensity score model covariates
+```{r}
 propensity_vars<- c(lt,demographics,financial)
-model_vars <- c(exp,lt,demographics,financial)
-#anx_outcomes <- c("MH_TRACK_a_W64","MH_TRACK_a_W83","MH_TRACK_a_W114")
-#dep_outcomes <- c("MH_TRACK_b_W64","MH_TRACK_b_W83","MH_TRACK_b_W114")
-#lone_outcomes <- c("MH_TRACK_c_W64","MH_TRACK_c_W83","MH_TRACK_c_W114")
-#hope_outcomes <- c("MH_TRACK_d_W64","MH_TRACK_d_W83","MH_TRACK_d_W114")
-#sleep_outcomes <- c("MH_TRACK_e_W64","MH_TRACK_e_W83","MH_TRACK_e_W114")
-#mh_outcomes <- c(anx_outcomes ,dep_outcomes,lone_outcomes ,hope_outcomes ,sleep_outcomes)
-distress <- c("MH_TRACK_int_W64","MH_TRACK_int_W83","MH_TRACK_int_W114")
+```
+
+### Labels for covariates (for tables and love plot)
+
+```{r}
+propensity_vars_labels <-list(INC_TIER2_W54 = "Income Tier (Pre-pandemic)",
+                 WORRY2c_comp_W54="Financial Strain (Pre-pandemic)",
+      COVID_MENTAL_W64="Lifetime Diagnosis of a Mental Health Condition",
+      DEBT_SECURE_W54="Secure Debt (Pre-pandemic)",
+      DEBT_INSECURE_W54="Insecure Debt (Pre-pandemic)",
+      FINANCEa_W54="Savings Account (Pre-pandemic)",
+      F_E3_W54="Employment Status (Pre-pandemic)",
+      F_AGECAT_W64="Age Category",
+      F_MARITALMOD_W64="Marital Status",
+      F_SEX_W64="Sex",
+      F_EDUCCAT2_W64="Education Category",
+      F_RACETHN_W64="Race and Ethnicity",
+      F_PARENT_W54="Parent of a child under 18",
+      F_CITIZEN_W64="Citizenship",
+      F_CREGION_W64="Census Region",
+      F_METRO_W64="Metropolitan Area","group"="group")
+
+outcome_labels <- list(MH_TRACK_int_W64 = "Psychological distress in March 2020",
+                       MH_TRACK_int_W83 = "Psychological distress in February 2021",
+                       MH_TRACK_int_W114 = "Psychological distress in September 2022")
+
+love_labels=c("F_CREGION_W64_Midwest"="Census Region: Midwest",
+         "F_RACETHN_W64_Black non-Hispanic"="Race & ethnicity: Black (Non-Hispanic)",
+         "F_AGECAT_W64_50-64" = "Age: 50-64",
+         "F_EDUCCAT2_W64_High school graduate"="Education: High school grad.",
+         "F_SEX_W64_Female" ="Sex: Female",
+         "F_EDUCCAT2_W64_Associate's degree" = "Education: Associates",
+         "F_MARITALMOD_W64_Divorced or Separated"= "Marital Status: Divorced/Separated",
+         "INC_TIER2_W54_Lower income" = "Income tier: lower",
+         "INC_TIER2_W54_Middle income"  ="Income tier: middle",
+         "INC_TIER2_W54_Upper income"  ="Income tier: upper",
+         "F_AGECAT_W64_30-49"= "Age: 30-49",
+         "F_PARENT_W54_Yes"="Parent of child <18: Yes",
+         "F_EDUCCAT2_W64_Less than high school" ="Education: < High School Graduate",
+         "F_EDUCCAT2_W54_College graduate/some post grad"  ="Education: College Graduate",
+         "F_CREGION_W64_West"="Census Region: West",
+         "F_RACETHN_W64_Other"="Race & ethnicity: Other",
+         "INC_SDT1_W54_$80,000 to less than $90,000"="Income: $80-90k",
+         "F_E3_W54_Full-time" ="Employment: Full-time",
+         "COVID_MENTAL_W64_Yes" = "Lifetime Diagnosis of Mental Health Condition: Yes",
+         "INC_SDT1_W54_$90,000 to less than $100,000" = "Income: $90-100k",
+         "F_MARITALMOD_W64_Never been married"  = "Marital Status: Never married",
+         "F_MARITALMOD_W64_Living with a partner" = "Marital Status: Living w/ partner",
+         "F_CREGION_W64_Northeast"="Census Region: Northeast",
+         "F_METRO_W64_Non-metropolitan" ="Metropolitan Area: No",
+         "F_MARITALMOD_W64_Married" = "Marital Status: Married",
+         "INC_SDT1_W54_$40,000 to less than $50,000"="Income: $40-50k",
+         "INC_SDT1_W54_Less than $30,000" ="Income: <$30k",
+         "F_EDUCCAT2_W64_Some college" ="Education: Some college",
+         "F_EDUCCAT2_W64_College graduate+" ="Education: College graduate",
+         "F_MARITALMOD_W64_Widowed"  ="Marital Status: Widowed",
+         "INC_SDT1_W54_$70,000 to less than $80,000" = "Income: $70-80k",
+         "F_CREGION_W64_South"="Census Region: South",
+         "F_CITIZEN_W64_No" ="US Citizen: No",
+        "F_CITIZEN_W64_Yes" ="US Citizen: Yes",
+         "F_EDUCCAT2_W64_Postgraduate"="Education: Postgrad",
+         "F_RACETHN_W64_Hispanic" ="Race & ethnicity: Hispanic",
+         "FINANCEa_W54_No"="Savings Account: No",
+        "FINANCEa_W54_Yes"="Savings Account: Yes",
+         "F_RACETHN_W64_White non-Hispanic" = "Race & ethnicity: White (Non-hispanic)",
+         "F_AGECAT_W64_18-29"   ="Age: 18-29",
+         "F_E3_W54_Part-time"="Employment: Part-time",
+         "DEBT_INSECURE_W54_Yes" = "Insecure Debt: Yes",
+         "DEBT_SECURE_W54_Yes" = "Secure Debt: Yes",
+         "F_E3_W54_Not employed" = "Employment: Unemployed",
+         "WORRY2c_comp_W54_Yes" = "Financial Strain: Yes",
+         "WORRY2c_comp_W54_No" = "Financial Strain: No",
+         "F_AGECAT_W64_65+" = "Age: 65+")
 ```
 
 ## helper functions
-```{r,echo=FALSE}
-responded <- function(data, waves) {
-  tmp <- data
+
+```{r}
+# Filters data to get only data from a given set of waves
+# inputs: 
+# - tmp: data-set to filter
+# - waves: list of waves as "W*" where * is an integer wave number.
+# Note: tmp must have columns called F_RESPONDED_W* where *  
+responded <- function(tmp, waves) {
   message(paste0("Pre filter N=",dim(tmp)[1]))
   for (wave in waves) {
      tmp <- tmp %>% filter(!!sym(paste("F_RESPONDED",wave,sep="_")) == 1)
@@ -62,11 +181,21 @@ responded <- function(data, waves) {
   return(tmp)
 }
 
+# Filters out missing data
+# inputs: 
+# - tmp: data-set to filter
+# - cov: list of covariates for which to filter missing data
+# - return: boolean indicating whether to return the filtered data
+# - quiet: boolean indicating whether to print missing data numbers for each cov
 no_missing <- function(tmp, cov,return=TRUE,quiet=FALSE) {
-  message(paste0("Pre filter N=",dim(tmp)[1]))
+  #message(paste0("Pre filter N=",dim(tmp)[1]))
   for (c in cov) {
     N0 <- dim(tmp)[1]
-    tmp <- tmp  %>% filter(!!sym(c) != "Refused/Missing" & !!sym(c) != "Refused" & !is.na(!!sym(c)) & !!sym(c)!="              " & !!sym(c)!="                         ")
+    tmp <- tmp  %>% filter(!!sym(c) != "Refused/Missing" & 
+                             !!sym(c) != "Refused" & 
+                             !is.na(!!sym(c)) & 
+                             !!sym(c)!="              " &
+                             !!sym(c)!="                         ")
     if (!quiet) {
       message(paste("  missing",c,":",N0 - dim(tmp)[1]))
     }
@@ -76,8 +205,6 @@ no_missing <- function(tmp, cov,return=TRUE,quiet=FALSE) {
     return(tmp)
   }
 }
-
-
 ```
 
 ```{r}
@@ -89,17 +216,21 @@ no_missing <- function(tmp, cov,return=TRUE,quiet=FALSE) {
 ```
 
 
-## five waves
-```{r,echo=FALSE}
+## Filter to only data with the five waves
+```{r}
 five_waves <- W_wide %>% responded(waves=c("W54","W64","W72","W83","W114"))
 ```
-## impute missing
-```{r,echo=FALSE}
-message("Before imputation:")
-for (x in propensity_vars) {
-  no_missing(five_waves,x,return=FALSE)
-}
+## impute missing and set reference levels
 
+### Before imputation:
+```{r echo=FALSE}
+for (x in propensity_vars) {
+  pre_imputation <- no_missing(five_waves,x,return=FALSE)
+}
+```
+
+
+```{r }
 five_waves_imputed <- five_waves %>% mutate(
   F_SEX_W64 = case_when(
     is.na(F_SEX_W64) ~ F_SEX_W54,
@@ -152,19 +283,24 @@ INC_TIER2_W54 =  case_when(
         F_CREGION_W64=relevel(F_CREGION_W64,ref="South"),
         COVID_MENTAL_W64=relevel(COVID_MENTAL_W64,ref="No"),
         F_PARENT_W54=relevel(factor(F_PARENT_W54),ref="No"))
+```
 
-message("After imputation:")
+### After imputation:
+```{r echo=FALSE}
+
 for (x in propensity_vars) {
   no_missing(five_waves_imputed,x,return=FALSE)
 }
 
-#five_waves %>% filter(is.na(F_CITIZEN_W64)) %>% select(contains("CITIZEN"))
-
 ```
 
+## Filter out the 65+ age category
 ```{r}
-
 younger <- five_waves_imputed %>% filter(F_AGECAT_W64!="65+")
+```
+
+
+```{r echo=FALSE}
 message(paste("Removing age greater than or equal to  65: n =",
               nrow(five_waves_imputed) - nrow(younger),
               round((nrow(five_waves_imputed) - nrow(younger)) /nrow(five_waves_imputed),3)*100, "%"))
@@ -172,18 +308,27 @@ message(paste("Removing age greater than or equal to  65: n =",
 
 ```
 
+## Remove those missing COVIDWORK W64 
 
 ```{r}
-#younger %>% group_by(COVIDWORK_a_W64,COVIDWORK_b_W64) %>% summarize(n())
 NA_exp64 <- younger %>% filter(
 COVIDWORK_W64_both_not_na==0) %>% nrow()
+```
 
+
+```{r echo=FALSE}
 message(paste("COVIDWORK W64 missing data: n =",
               NA_exp64,
               round(NA_exp64 / nrow(younger),3)*100, "%"))
+```
 
-YES_exp64 <- younger %>% filter(COVIDWORK_comp_bin_W64==1) %>% nrow() 
+## Remove those who experienced job or income loss by March 2020
+```{r}
+YES_exp64 <- younger %>% filter(COVIDWORK_comp_bin_W64==1) %>% nrow()
+```
 
+
+```{r echo=FALSE}
 message(paste("COVIDWORK W64 Yes: n =",
               YES_exp64,
               round(YES_exp64/nrow(younger),3)*100, "%"))
@@ -192,54 +337,61 @@ younger_no64 <- younger %>% filter(COVIDWORK_comp_bin_W64==0)
 
 ```
 
+## Remove those who answered "not applicable not employed" august 2020 income loss 
 ```{r}
-#younger_no64 %>% group_by(COVIDWORK_comp_bin_W72,COVIDWORK_comp_W72) %>% summarize(n())
 younger_no64_employed <- younger_no64 %>% filter(!(COVIDWORK_comp_W72 == "Not applicable (not employed)" | COVIDWORK_comp_W72 == "Refused/Missing"))
-
-
-message(paste("COVIDWORK 72 Not applicable: n =",
-              nrow(younger_no64) - nrow(younger_no64_employed),
-              round((nrow(younger_no64) - nrow(younger_no64_employed))/nrow(younger_no64),3)*100, "%"))
-
-younger_no64 %>% group_by(COVIDWORK_comp_bin_W72,COVIDWORKR_a_W72,COVIDWORKR_b_W72,COVIDWORKO_a_W72,COVIDWORKO_b_W72) %>% summarize(n())
 ```
 
 
+```{r echo=FALSE}
+message(paste("COVIDWORK 72 Not applicable: n =",
+              nrow(younger_no64) - nrow(younger_no64_employed),
+              round((nrow(younger_no64) - nrow(younger_no64_employed))/nrow(younger_no64),3)*100, "%"))
+```
+
+## Remove those with missing August income loss
 ```{r}
 tmp <- nrow(younger_no64_employed)
+tmp_dat <- younger_no64_employed
 younger_no64_employed <- younger_no64_employed %>% filter(!is.na(COVIDWORK_comp_bin_W72))
+```
 
+
+```{r echo=FALSE}
 message(paste("COVIDWORK 72 missing: n =",
               tmp - nrow(younger_no64_employed),
               round((tmp - nrow(younger_no64_employed))/tmp,3)*100, "%"))
 
 ```
 
+## Remove those missing outcome data
 ```{r}
 younger_no64_employed_nomiss_psyc <- younger_no64_employed %>% no_missing(cov=c(distress))
+```
 
+
+```{r echo=FALSE}
 message(paste("Psych data missing: n =",
               nrow(younger_no64_employed) - nrow(younger_no64_employed_nomiss_psyc),
               round((nrow(younger_no64_employed) - nrow(younger_no64_employed_nomiss_psyc))/nrow(younger_no64),3)*100, "%"))
 
 ```
-
+## Remove those missing covariate data
 ```{r}
 younger_no64_employed_nomiss_psyc_prop <- younger_no64_employed_nomiss_psyc %>% no_missing(propensity_vars)  %>% droplevels()
+```
 
+
+```{r echo=FALSE}
 message(paste("propensity vars missing: n =",
               nrow(younger_no64_employed_nomiss_psyc) - nrow(younger_no64_employed_nomiss_psyc_prop ),
               round((nrow(younger_no64_employed_nomiss_psyc) - nrow(younger_no64_employed_nomiss_psyc_prop))/nrow(younger_no64_employed_nomiss_psyc),3)*100, "%"))
 
-   
 
 ```
-```{r}
-younger_no64_employed_nomiss_psyc_prop %>% group_by(COVIDWORK_comp_bin_W72,COVIDWORKR_a_W72,COVIDWORKR_b_W72,COVIDWORKO_a_W72,COVIDWORKO_b_W72) %>% summarize(n())
+## Summary
 
-```
-
-```{r}
+```{r echo=FALSE}
 message(paste("Out of .... N= ",
               tmp,
               "excluded missing n=",
@@ -248,108 +400,58 @@ message(paste("Out of .... N= ",
               "for a total of",
               nrow(younger_no64_employed_nomiss_psyc_prop)))
 
-(nrow(younger_no64_employed)+1) - nrow(younger_no64_employed_nomiss_psyc_prop)
-1-nrow(younger_no64_employed_nomiss_psyc_prop)/(nrow(younger_no64_employed)+1)
 ```
 
+## Table comparing missing to non-missing
+```{r}
+tmp_dat <- tmp_dat %>%
+  mutate(Missing_dat = case_when(
+    QKEY %in% younger_no64_employed_nomiss_psyc_prop$QKEY ~ "No missing data",
+    TRUE ~ "Missing some data")) %>% mutate(across(all_of(c("COVIDWORK_comp_W72",propensity_vars)),function(x) case_when(x=="Refused/Missing" ~ NA,TRUE ~ x))) %>% droplevels()
 
-```{r,echo=FALSE}
+missing_tab <- svydesign(~1, data = tmp_dat, weights = ~WEIGHT_W54_64_72_83_114) %>% 
+  tbl_svysummary(by=Missing_dat,                                     
+                 label=c(list(COVIDWORK_comp_W72="Mid-pandemic income or job loss"),propensity_vars_labels,outcome_labels),
+                 include=all_of(c("COVIDWORK_comp_W72",propensity_vars,distress)),
+                 statistic = list(
+                   all_categorical() ~ "{n_unweighted} ({p}%)",
+                   all_continuous() ~ "{mean} ({sd})")) %>%
+  modify_header(all_stat_cols() ~ "**{level}**, n={n_unweighted} ({style_percent(p)}%)") %>%
+  modify_footnote(all_stat_cols() ~ "Unweighted N (Weighted %). Weighted with longitudinal survey weights.")
+
+missing_tab  
+```
+
+## Save analytic dataset 
+
+```{r}
 analytic <- younger_no64_employed_nomiss_psyc_prop 
 write_sav(analytic, here("data","analytic.sav"))
 ```
 
+# Analysis 
+
+## Table 1
 
 ```{r}
-propensity_vars_labels <-list(INC_TIER2_W54 = "Income Tier (Pre-pandemic)",
-                 WORRY2c_comp_W54="Financial Strain (Pre-pandemic)",
-      COVID_MENTAL_W64="Lifetime Diagnosis of a Mental Health Condition",
-      DEBT_SECURE_W54="Secure Debt (Pre-pandemic)",
-      DEBT_INSECURE_W54="Insecure Debt (Pre-pandemic)",
-      FINANCEa_W54="Savings Account (Pre-pandemic)",
-      F_E3_W54="Employment Status (Pre-pandemic)",
-      F_AGECAT_W64="Age Category",
-      F_MARITALMOD_W64="Marital Status",
-      F_SEX_W64="Sex",
-      F_EDUCCAT2_W64="Education Category",
-      F_RACETHN_W64="Race and Ethnicity",
-      F_PARENT_W54="Parent of a child under 18",
-      F_CITIZEN_W64="Citizenship",
-      F_CREGION_W64="Census Region",
-      F_METRO_W64="Metropolitan Area","group"="group")
 
+t1 <- svydesign(~1, data = analytic, weights = ~WEIGHT_W54_64_72_83_114) %>% 
+  tbl_svysummary(by=COVIDWORK_comp_W72,                                               
+                 label=c(propensity_vars_labels,outcome_labels),
+                 include=all_of(c(propensity_vars,distress)),
+                 statistic = list(
+                   all_categorical() ~ "{n_unweighted} ({p}%)",
+                   all_continuous() ~ "{mean} ({mean.std.error})")) %>%
+  modify_header(all_stat_cols() ~ "{level}, {n_unweighted} ({style_percent(p)}%)") %>%
+  modify_footnote(all_stat_cols() ~ "Unweighted N (Weighted %). Weighted with longitudinal survey weights.") %>%
+  modify_spanning_header(all_stat_cols() ~ "**Mid-pandemic Income or job loss**") %>% 
+  add_overall(col_label = "**Overall** {n_unweighted}") %>% 
+  add_p() 
 
-love_labels=c("F_CREGION_W64_Midwest"="Census Region: Midwest",
-         "F_RACETHN_W64_Black non-Hispanic"="Race and ethnicity: Black (Non-Hispanic)",
-         "F_AGECAT_W64_50-64" = "Age: 50-64",
-         "F_EDUCCAT2_W64_High school graduate"="Education: High school grad.",
-         "F_SEX_W64_Female" ="Sex: Female",
-         "F_EDUCCAT2_W64_Associate's degree" = "Education: Associates",
-         "F_MARITALMOD_W64_Divorced or Separated"= "Marital Status: Divorce/Sep",
-         "INC_TIER2_W54_Lower income" = "Income tier: lower",
-         "INC_TIER2_W54_Middle income"  ="Income tier: middle",
-         "INC_TIER2_W54_Upper income"  ="Income tier: upper",
-         "F_AGECAT_W64_30-49"= "Age: 30-49",
-         "F_PARENT_W54_Yes"="Parent of child <18: Yes",
-         "F_EDUCCAT2_W64_Less than high school" ="Education: <HS",
-         "F_EDUCCAT2_W54_College graduate/some post grad"  ="Education: College",
-         "F_CREGION_W64_West"="Census Region: West",
-         "F_RACETHN_W64_Other"="Race and ethnicity: Other",
-         "INC_SDT1_W54_$80,000 to less than $90,000"="Income: 80-90k",
-         "F_E3_W54_Full-time" ="Employment: Full-time",
-         "COVID_MENTAL_W64_Yes" = "Has Life time Diagnosis",
-         "INC_SDT1_W54_$90,000 to less than $100,000" = "Income: 90-100k",
-         "F_MARITALMOD_W64_Never been married"  = "Marital Status: Never married",
-         "F_MARITALMOD_W64_Living with a partner" = "Marital Status: Living w/ partner",
-         "F_CREGION_W64_Northeast"="Census Region: Northeast",
-         "F_METRO_W64_No" ="Metropolitan Area: No",
-         "F_MARITALMOD_W64_Married" = "Marital Status: Married",
-         "INC_SDT1_W54_$40,000 to less than $50,000"="Income: 40-50k",
-         "INC_SDT1_W54_Less than $30,000" ="Income: <30k",
-         "F_EDUCCAT2_W64_Some college" ="Education: Some college",
-         "F_EDUCCAT2_W64_College graduate+" ="Education: College graduate",
-         "F_MARITALMOD_W64_Widowed"  ="Marital Status: Widowed",
-         "INC_SDT1_W54_$70,000 to less than $80,000" = "Income: 70-80k",
-         "F_CREGION_W64_South"="Census Region: South",
-         "F_CITIZEN_W64_No" ="US Citizen: No",
-        "F_CITIZEN_W64_Yes" ="US Citizen: Yes",
-         "F_EDUCCAT2_W64_Postgraduate"="Education: Postgrad",
-         "F_RACETHN_W64_Hispanic" ="Race and ethnicity: Hispanic",
-         "FINANCEa_W54_No"="Savings Account: No",
-        "FINANCEa_W54_Yes"="Savings Account: Yes",
-         "F_RACETHN_W64_White non-Hispanic" = "Race and ethnicity: White (Non-hispanic)",
-         "F_AGECAT_W64_18-29"   ="Age: 18-29",
-         "F_E3_W54_Part-time"="Employment: Part-time",
-         "DEBT_INSECURE_W54_Yes" = "Insecure Debt: Yes",
-         "DEBT_SECURE_W54_Yes" = "Secure Debt: Yes",
-         "F_E3_W54_Not employed" = "Employment: Unemployed",
-         "WORRY2c_comp_W54_Yes" = "Financial Strain: Yes",
-         "WORRY2c_comp_W54_No" = "Financial Strain: No",
-         "F_AGECAT_W64_65+" = "Age: 65+")
+t1 
 ```
-
-#  table 1
-```{r}
-
-analytic %>% select(contains("WEIGHT"))
-t1_overall <- svydesign(~1, data = analytic, weights = ~WEIGHT_W54_64_72_83_114) %>% tbl_svysummary(label=propensity_vars_labels,include=all_of(c(propensity_vars,"MH_TRACK_int_W64")),
-                 statistic = list(all_categorical() ~ "{n_unweighted} ({p}%)",all_continuous() ~ "{mean} ({sd})")) %>%
-  modify_header(all_stat_cols() ~ "**{n_unweighted} ({p}%)**") %>%
-  modify_footnote(all_stat_cols() ~ "Unweighted N (Weighted %). Weighted with longitudinal survey weights.")
-
-
-t1 <- svydesign(~1, data = analytic, weights = ~WEIGHT_W54_64_72_83_114) %>% tbl_svysummary(by=group,label=propensity_vars_labels,include=all_of(c(propensity_vars,"MH_TRACK_int_W64")),
-                 statistic = list(all_categorical() ~ "{n_unweighted} ({p}%)",all_continuous() ~ "{mean} ({sd})")) %>%
-  modify_header(all_stat_cols() ~ "**{n_unweighted} ({p})**") %>%
-  modify_footnote(all_stat_cols() ~ "Unweighted N (Weighted %). Weighted with longitudinal survey weights.") %>% add_p()
-
-
-T1 <- tbl_merge(list(t1_overall,t1),tab_spanner = c("**Overall analytic sample**","**Income or job loss**"))
-
-T1
-
-```
-# MAKE PS SCORES
-```{r}
+## Propensity scores
+```{r fig.height=6,fig.width=7}
 f_ps <- as.formula(paste0("COVIDWORK_comp_bin_W72"," ~ ", paste0(propensity_vars, collapse= "+")))
 f_ps
 
@@ -358,9 +460,11 @@ w.out_glm <- weightit(f_ps, data = analytic,
 
 plot(summary(w.out_glm))
 
-bal.tab(w.out_glm)
-```
-```{r}
+
+w.out_glm 
+
+# bal.tab(w.out_glm)
+
 love.plot(f_ps,
           data = analytic, 
           weights = w.out_glm,
@@ -372,343 +476,161 @@ love.plot(f_ps,
           sample.names=c("Survey Weighted","PS and Survey Weighted"),
           var.names=love_labels,
           thresholds = c(m = .1),
-          line = TRUE,s.weights="WEIGHT_W54_64_72_83_114") + theme_bw() + theme(legend.position="bottom", legend.title =element_blank(),legend.text=element_text(size=rel(0.75)))
-ggsave(file.path(fig_path,"main_loveplot.pdf"),width=6,height=6)
+          line = TRUE,s.weights="WEIGHT_W54_64_72_83_114") + theme_bw() + theme(legend.position="bottom",#c(.77,.1), 
+                                                                                legend.title =element_blank(),legend.box.margin = margin(t = -11, 0, 0, 0),legend.text=element_text(size=rel(0.75)))
+ggsave(file.path(fig_path,"figure1.pdf"),width=7,height=6)
 
-#ggsave(file.path(fig_path,"main_loveplot.png"))
 ```
 
-# MAIN ANALYSIS
-```{r}
-f_glm <- as.formula(paste("MH_TRACK_int_W64 ~COVIDWORK_comp_bin_W72 +",paste(propensity_vars, collapse= "+")))
-design.ps <- svydesign(ids=~QKEY, weights=w.out_glm$weights *analytic$WEIGHT_W54_64_72_83_114, data=analytic)
-glm_int_W64 <- svyglm(f_glm, design=design.ps,family="quasipoisson")
-summary(glm_int_W64)
+## Supplemental Table 2
 
+```{r}
+## logistic regression model
+ps_design <-svydesign(id=~QKEY,weights=~WEIGHT_W54_64_72_83_114, data=analytic)
+
+m1 <- svyglm(as.formula(paste("COVIDWORK_comp_bin_W72 ~",                       
+                      paste(propensity_vars,collapse="+"))),
+             design=ps_design,
+             family="binomial")
+
+job_loss_model_table <- tbl_regression(m1,exponentiate=TRUE,label=propensity_vars_labels)
+
+## Balance table
+bal <- bal.tab(f_ps, data = analytic, 
+        weights = list(glm = w.out_glm$weights),
+        un=TRUE,
+        binary = "std",
+        disp.v.ratio = TRUE,
+        s.weights="WEIGHT_W54_64_72_83_114")
+
+bal_tibble <- tibble("variable" = rownames(bal$Balance),
+                     "UnadjustedSMD"=bal$Balance$Diff.Un,
+                     "AdjustedSMD"=bal$Balance$Diff.Adj) %>%
+  separate(variable,into=c("variable","label"),sep="(?<=_W(\\d\\d)_)") %>%
+  mutate("variable" = substr(variable,1, nchar(variable)-1),
+         "UnadjustedSMD" = round(UnadjustedSMD,3),
+         "AdjustedSMD" = round(AdjustedSMD,3)) %>% 
+  mutate(term = paste0(
+variable, label)) %>% select(-variable,-label)
+
+# set up combined table
+comb_table <- job_loss_model_table
+comb_table$table_body <- left_join(job_loss_model_table$table_body,bal_tibble,by="term")
+
+# formatting for combined table
+comb_table$table_styling$header <- comb_table$table_styling$header %>%
+  add_row(column="UnadjustedSMD",
+          hide=FALSE,
+          interpret_label="gt::md",
+          align="center",
+          label="Unadjusted",
+          interpret_spanning_header="gt::md",
+          spanning_header="**Standardized Mean Difference (SMD)**") %>% 
+  add_row(column="AdjustedSMD",
+          hide=FALSE,
+          interpret_label="gt::md",
+          align="center",
+          label="Adjusted",
+          interpret_spanning_header="gt::md",
+          spanning_header="**Standardized Mean Difference (SMD)**")
+
+comb_table
+```
+
+
+## Main analysis
+```{r}
+
+design.main <- svydesign(ids=~QKEY, weights=w.out_glm$weights *analytic$WEIGHT_W54_64_72_83_114, data=analytic)
+
+f_glm <- as.formula(paste("MH_TRACK_int_W64 ~COVIDWORK_comp_bin_W72 +",paste(propensity_vars, collapse= "+")))
+glm_int_W64 <- svyglm(f_glm, design=design.main,family="quasipoisson")
 
 f_glm <- as.formula(paste("MH_TRACK_int_W83 ~COVIDWORK_comp_bin_W72 + MH_TRACK_int_W64 +",paste(propensity_vars, collapse= "+")))
-design.ps <- svydesign(ids=~QKEY, weights=w.out_glm$weights *analytic$WEIGHT_W54_64_72_83_114, data=analytic)
-glm_int_W83 <- svyglm(f_glm, design=design.ps,family="quasipoisson")
-summary(glm_int_W83)
+glm_int_W83 <- svyglm(f_glm, design=design.main,family="quasipoisson")
 
 f_glm <- as.formula(paste("MH_TRACK_int_W114 ~COVIDWORK_comp_bin_W72+ MH_TRACK_int_W64 +",paste(propensity_vars, collapse= "+")))
-design.ps <- svydesign(ids=~QKEY, weights=w.out_glm$weights *analytic$WEIGHT_W54_64_72_83_114, data=analytic)
-glm_int_W114 <- svyglm(f_glm, design=design.ps,family= "quasipoisson")
+glm_int_W114 <- svyglm(f_glm, design=design.main,family= "quasipoisson")
 
-#plot_models <- analytic %>% mutate("leverage83" = hatvalues(glm_int_W83))
 
-#plot_models %>% filter(leverage83 > .25)
-reg_tables_64 <- tbl_regression(glm_int_W64,include="COVIDWORK_comp_bin_W72",exponentiate = TRUE)
-reg_tables_83 <- tbl_regression(glm_int_W83,include="COVIDWORK_comp_bin_W72",exponentiate = TRUE)
-reg_tables_114 <- tbl_regression(glm_int_W114,include="COVIDWORK_comp_bin_W72",exponentiate = TRUE)
+reg_tables_64 <- tbl_regression(glm_int_W64,include="COVIDWORK_comp_bin_W72",exponentiate = TRUE,label=c(COVIDWORK_comp_bin_W72="Income or job loss"))
+reg_tables_83 <- tbl_regression(glm_int_W83,include="COVIDWORK_comp_bin_W72",exponentiate = TRUE,label=c(COVIDWORK_comp_bin_W72="Income or job loss"))
+reg_tables_114 <- tbl_regression(glm_int_W114,include="COVIDWORK_comp_bin_W72",exponentiate = TRUE,label=c(COVIDWORK_comp_bin_W72="Income or job loss"))
 
-distress_tables <- tbl_stack(list(reg_tables_64,reg_tables_83,reg_tables_114),group_header=list("March 2020","Feb 2021","Sept 2022"))
+distress_tables <- tbl_stack(list(reg_tables_64,reg_tables_83,reg_tables_114),group_header=list("Mar. 2020","Feb. 2021","Sept. 2022"))
+
 distress_tables
 ```
 
+## Figure 2
+```{r fig.width=7,fig.height=5}
+results_plot_table <- distress_tables$table_body %>% mutate("label"=unlist(groupname_col)) %>% select("label","estimate","conf.low","conf.high") %>% mutate("time"= case_when(
+          label== "Mar. 2020"~ as.Date("2020-03-24"),
+           label == "Feb. 2021" ~ as.Date("2021-02-16"),
+           label== "Sept. 2022" ~ as.Date("2022-09-13"))) 
 
-```{r}
-analytic <- mutate(analytic,"comb_weight"=w.out_glm$weights *analytic$WEIGHT_W54_64_72_83_114)
-
-contrast_W64 <- avg_predictions(glm_int_W64,
-                                type="response",
-                newdata=subset(analytic,COVIDWORK_comp_bin_W72==1),
-                variables = "COVIDWORK_comp_bin_W72",
-                wts = "comb_weight")  %>% mutate("time"=as.Date("2020-03-19"))
-
-contrast_W83 <- avg_predictions(glm_int_W83,
-                                type="response",
-                newdata=subset(analytic,COVIDWORK_comp_bin_W72==1),
-                variables = "COVIDWORK_comp_bin_W72",
-                wts = "comb_weight")  %>% mutate("time"=as.Date("2021-02-16"))
-
-contrast_W114 <- avg_predictions(glm_int_W114,
-                                type="response",
-                newdata=subset(analytic,COVIDWORK_comp_bin_W72==1),
-                variables = "COVIDWORK_comp_bin_W72",
-                wts = "comb_weight") %>% mutate("time"=as.Date("2022-09-13"))
-
-comb_estimates <- rbind(contrast_W64,contrast_W83,contrast_W114) %>% 
-  mutate(group=case_when(
-    COVIDWORK_comp_bin_W72 == 1 ~ "Mid-pandemic income loss",
-    COVIDWORK_comp_bin_W72 == 0 ~ "No income loss",
-  
-))
-
-comb_estimates %>% ggplot() + geom_point(aes(x=time,y=estimate)) +
-  geom_errorbar(aes(x=time,ymin=conf.low,ymax=conf.high,linetype=group),width=20) +
-  geom_line(aes(x=time,y=estimate,linetype=group,group=factor(COVIDWORK_comp_bin_W72)))+ 
+results_plot_table %>%  ggplot() + geom_point(aes(x=time,y=estimate)) +
+  geom_errorbar(aes(x=time,ymin=conf.low,ymax=conf.high),width=20) +
+  geom_line(aes(x=time,y=estimate))+ 
+  geom_hline(yintercept=1,linetype="dashed") + 
   theme_bw() +
-  annotate('rect', xmin=as.Date("2020-03-24"), xmax=as.Date("2020-08-16"), ymin=4, ymax=6.5, alpha=.3, fill='gray') + 
-  ylab("Psychological distress score, mean (SE)") +
-  labs(title="Propensity score and survey weighted and regression adjusted marginal average predictions",linetype=NULL) + scale_y_continuous(breaks=c(4,4.5,5,5.5,6)) +
+  annotate('rect', xmin=as.Date("2020-03-24"), xmax=as.Date("2020-08-16"), ymin=.80, ymax=1.3, alpha=.3, fill='gray') +
+  ylab("Estimated ratio of psychological distress scores") + scale_y_continuous(breaks=c(.8,.9,1,1.1,1.2,1.3)) +
   scale_x_date(breaks=c(as.Date("2020-03-24"),as.Date("2020-08-16"),as.Date("2021-02-16"),as.Date("2022-09-13")),label=c("Mar. 2020","Aug. 2020","Feb. 2021","Sept. 2022")) + 
-  theme(#axis.text.x = element_text(angle = 90,size=rel(1.2),vjust=.5),
-        #legend.background = element_rect(linetype = 1, size = 0.5, colour = 1),
-        #legend.title= element_text(size=rel(.8)),
-        legend.margin=margin(t=-20), 
+  theme(legend.margin=margin(t=-20), 
         legend.text = element_text(size=rel(.75)),
         legend.position = "bottom") + xlab("")
-
-```
-```{r}
-library("EValue")
-evalues.RR(est = 1.09, lo = 1.01, hi = 1.18)
-evalues.RR(est = 1.12, lo = 1.02, hi = 1.22)
+ggsave(file.path(fig_path,"figure2.pdf"),width=7,height=5)
 ```
 
-
-# MAIN ANALYSIS ALT: Remove all NA and "Not applicable"
-```{r}
-analytic <- analytic %>% mutate(
-  "COVIDWORKR_comp_alt_W72" =case_when(
-  is.na(COVIDWORKR_a_W72) | is.na(COVIDWORKR_b_W72) ~ "Refused/Missing",
-  COVIDWORKR_a_W72 == "Not applicable (not employed)" | COVIDWORKR_b_W72== "Not applicable (not employed)" ~ "Not applicable (not employed)",
-  COVIDWORKR_a_W72 == "Yes, has happened" | COVIDWORKR_b_W72== "Yes, has happened" ~ "Yes, has happened",
-  COVIDWORKR_a_W72 == "No, has not happened" | COVIDWORKR_b_W72== "No, has not happened" ~ "No, has not happened"
-))
-
-analytic %>% group_by(F_RESPONDED_W72,COVIDWORKR_comp_alt_W72,COVIDWORKR_a_W72,COVIDWORKR_b_W72) %>% summarize(n())
-
-analytic <- analytic %>% mutate(
-  "COVIDWORKO_comp_alt_W72" =case_when(
-  is.na(COVIDWORKO_a_W72) & is.na(COVIDWORKO_b_W72) ~ "Both Missing",
-  is.na(COVIDWORKO_a_W72) | is.na(COVIDWORKO_b_W72) ~ "Refused/Missing",
-    COVIDWORKO_a_W72 == "Not applicable (not employed)" | COVIDWORKO_b_W72== "Not applicable (not employed)" ~ "Not applicable (not employed)",
-  COVIDWORKO_a_W72 == "Yes, has happened" | COVIDWORKO_b_W72== "Yes, has happened" ~ "Yes, has happened",
-  COVIDWORKO_a_W72 == "No, has not happened" | COVIDWORKO_b_W72== "No, has not happened" ~ "No, has not happened"
-))
-
-analytic %>% group_by(F_RESPONDED_W72,COVIDWORKO_comp_alt_W72,COVIDWORKO_a_W72,COVIDWORKO_b_W72) %>% summarize(n())
-
-analytic <- analytic%>% mutate(
-"COVIDWORK_comp_alt_W72" = case_when(
-  COVIDWORKO_comp_alt_W72 == "Both Missing" ~ COVIDWORKR_comp_alt_W72,
-  COVIDWORKO_comp_alt_W72 == "Refused/Missing" | COVIDWORKR_comp_W72=="Refused/Missing"~ "Refused/Missing",
-  COVIDWORKO_comp_alt_W72 == "Yes, has happened" | COVIDWORKR_comp_alt_W72== "Yes, has happened" ~ "Yes, has happened",
-  COVIDWORKO_comp_alt_W72 == "No, has not happened" | COVIDWORKR_comp_alt_W72== "No, has not happened" ~ "No, has not happened",
-  COVIDWORKO_comp_alt_W72 == "Not applicable (not employed)" | COVIDWORKR_comp_alt_W72== "Not applicable (not employed)" ~ "Not applicable (not employed)"),
-"COVIDWORK_comp_alt_bin_W72" = case_when(
-  COVIDWORK_comp_alt_W72 == "Yes, has happened" ~ 1,
-  COVIDWORK_comp_alt_W72 == "No, has not happened" ~ 0))
-
-analytic_removeNA <- analytic %>% filter(!is.na(COVIDWORK_comp_alt_bin_W72 ))
-nrow(analytic) - nrow(analytic_removeNA)
-w.out_glm_removeNA <- weightit(f_ps, data = analytic_removeNA,
-                        estimand= "ATT",method="ps",s.weights="WEIGHT_W54_64_72_83_114")
-
-f_glm <- as.formula(paste("MH_TRACK_int_W83 ~COVIDWORK_comp_bin_W72 + MH_TRACK_int_W64 +",paste(propensity_vars, collapse= "+")))
-design.ps <- svydesign(ids=~QKEY, weights=w.out_glm_removeNA$weights *analytic_removeNA$WEIGHT_W54_64_72_83_114, data=analytic_removeNA)
-glm_int_W83_removeNA <- svyglm(f_glm, design=design.ps,family="quasipoisson")
-#summary(glm_int_W83_removeNA)
-
-f_glm <- as.formula(paste("MH_TRACK_int_W114 ~COVIDWORK_comp_bin_W72+ MH_TRACK_int_W64 +",paste(propensity_vars, collapse= "+")))
-design.ps <- svydesign(ids=~QKEY, weights=w.out_glm_removeNA$weights *analytic_removeNA$WEIGHT_W54_64_72_83_114, data=analytic_removeNA)
-glm_int_W114_removeNA <- svyglm(f_glm, design=design.ps,family= "quasipoisson")
-#summary(glm_int_W114_removeNA)
-
-reg_tables_83_removeNA <- tbl_regression(glm_int_W83_removeNA,include="COVIDWORK_comp_bin_W72",exponentiate = TRUE)
-reg_tables_114_removeNA <- tbl_regression(glm_int_W114_removeNA,include="COVIDWORK_comp_bin_W72",exponentiate = TRUE)
-
-distress_tables_removeNA <- tbl_stack(list(reg_tables_83_removeNA,reg_tables_114_removeNA),group_header=list("Feb 2021","Sept 2022"))
-distress_tables_removeNA
-```
-
-
-
-# avg psychological distress
-```{r}
-prev <- svydesign(~1, data = analytic, weights = ~WEIGHT_W54_64_72_83_114) %>% tbl_svysummary(by=group,label=propensity_vars_labels,include=all_of(c(distress)),statistic = list(all_continuous() ~ "{mean} ({mean.std.error})"))%>%
-  modify_header(all_stat_cols() ~ "**{n_unweighted} ({p})**") %>% add_p()
-```
-
-# plot of avg psychological distress WITH PS WEIGHTING
-```{r}
-analytic <- analytic %>% mutate(
-                                "comb_weight" = w.out_glm$weights * WEIGHT_W54_64_72_83_114) 
-ps_prev <- svydesign(~1, data = analytic, weights = ~comb_weight) %>% tbl_svysummary(by=group,label=propensity_vars_labels,include=all_of(c(distress)),statistic = list(all_continuous() ~ "{mean} ({mean.std.error})")) %>%
-  modify_header(all_stat_cols() ~ "**{n_unweighted} ({p})**") %>% add_p()
-
-tbl_merge(list(prev,ps_prev),tab_spanner=c("Survey weighted","Survey and PS Weighted"))
-```
-
-
+### Figure 2 with title and caption
 
 ```{r}
-avg_plot <- ps_prev$table_body %>% select("label","stat_1","stat_2") %>% pivot_longer(cols = c("stat_1","stat_2"),names_to = "group",names_prefix="(stat_)") %>% separate(value, c("mean", "SE"), sep = "\\(") %>% mutate(SE= str_remove(SE, "\\)")) %>% mutate("group"=case_when(group=="1"~"Mid-pandemic income loss",group=="2"~"No income loss"), WAVE = case_when( endsWith(label, "W64") ~ "W64", 
-  endsWith(label, "W83")~ "W83",endsWith(label, "W114")~ "W114"), "time"= case_when(
-           WAVE == "W64" ~ as.Date("2020-03-19"),
-           WAVE == "W83" ~ as.Date("2021-02-16"),
-           WAVE== "W114" ~ as.Date("2022-09-13"))) %>% mutate("mean"=as.numeric(mean),"SE"=as.numeric(SE))
-
-avg_plot %>% ggplot() + geom_point(aes(x=time,y=as.numeric(mean))) +
-  geom_errorbar(aes(x=time,ymin=mean-SE,ymax=mean+SE,linetype=group),width=20) +
-  geom_line(aes(x=time,y=as.numeric(mean),linetype=group,group=group))+ 
+p <- results_plot_table %>%  ggplot() + 
+  geom_point(aes(x=time,y=estimate),col="black") +
+  geom_errorbar(aes(x=time,ymin=conf.low,ymax=conf.high),width=20,col="black") +
+  geom_line(aes(x=time,y=estimate),col="black")+ 
+  geom_hline(yintercept=1,linetype="dashed",col="black") + 
   theme_bw() +
-  annotate('rect', xmin=as.Date("2020-03-24"), xmax=as.Date("2020-08-16"), ymin=4, ymax=6.5, alpha=.3, fill='gray') + 
-  ylab("Psychological distress score, mean (SE)") +
-  labs(title="Propensity score and survey weighted but not regression adjusted",linetype=NULL) + scale_y_continuous(breaks=c(4,4.5,5,5.5,6)) +
+  annotate('rect', xmin=as.Date("2020-03-24"), xmax=as.Date("2020-08-16"), ymin=.80, ymax=1.3, alpha=.3, fill='gray') +
+  ylab("Estimated ratio of psychological distress scores") + scale_y_continuous(breaks=c(.8,.9,1,1.1,1.2,1.3)) +
   scale_x_date(breaks=c(as.Date("2020-03-24"),as.Date("2020-08-16"),as.Date("2021-02-16"),as.Date("2022-09-13")),label=c("Mar. 2020","Aug. 2020","Feb. 2021","Sept. 2022")) + 
-  theme(#axis.text.x = element_text(angle = 90,size=rel(1.2),vjust=.5),
-        #legend.background = element_rect(linetype = 1, size = 0.5, colour = 1),
-        #legend.title= element_text(size=rel(.8)),
-        legend.margin=margin(t=-20), 
+  theme(legend.margin=margin(t=-20), 
         legend.text = element_text(size=rel(.75)),
-        legend.position = "bottom") + xlab("")#+
-#ggsave(file.path(fig_path,"avg_plot_ps_090623.pdf"),width=7,height=5)
-#analytic_long <- analytic %>% select(contains("MH_TRACK_int"),"QKEY","COVIDWORK_comp_bin_W72") %>% pivot_longer(cols=c("MH_TRACK_int_W64","MH_TRACK_int_W83","MH_TRACK_int_W114"),names_prefix="(MH_TRACK_int_)",names_to="WAVE",values_to="score") %>% mutate("time"= case_when(
-#           WAVE == "W64" ~ as.Date("2020-03-19"),
-#           WAVE == "W83" ~ as.Date("2021-02-16"),
-#           WAVE== "W114" ~ as.Date("2022-09-13"))) 
-
-#analytic_long %>% ggplot() + geom_violin(aes(x=time,y=score,group=interaction(time,COVIDWORK_comp_bin_W72),fill=factor(COVIDWORK_comp_bin_W72)))
-#geom_errorbar(aes(x=time,ymin=as.numeric(prev_lower),ymax=as.numeric(prev_upper),colour=vars),alpha=.5)
-
-#analytic_long %>% ggplot(aes(x=time,y=score,group=time,fill=factor(COVIDWORK_comp_bin_W72))) + geom_violinhalf(data = analytic_long %>% filter(COVIDWORK_comp_bin_W72 ==1))+ geom_violinhalf(data = analytic_long %>% filter(COVIDWORK_comp_bin_W72 ==0),flip=TRUE)
+        legend.position = "bottom") + xlab("") +
+  labs(subtitle="Adjusted ratio of psychological distress scores (with 95% CI) for mid-pandemic income or job loss",
+       caption="Data: Pew Research Center American Trends Panel. Sample: Adults 18-64 years in the U.S. who had not experienced income or job loss by March 24, 2020 (N=1392). The light gray region represents the time (March 24-August 16, 2020) during which mid-pandemic income or job loss occurred. The figure shows the exponentiated coefficients and 95% confidence intervals for covariate-adjusted, survey and propensity score weighted quasi-Poisson models.") 
+p
+grattantheme::wrap_labs(p,type="normal",labs_to_wrap = c("caption"))
+ggsave(file.path(fig_path,"figure_SER.pdf"))
 ```
 
+## E-value
+
+### Feb. 2021
 ```{r}
-avg_plot <- prev$table_body %>% select("label","stat_1","stat_2") %>% pivot_longer(cols = c("stat_1","stat_2"),names_to = "group",names_prefix="(stat_)") %>% separate(value, c("mean", "SE"), sep = "\\(") %>% mutate(SE= str_remove(SE, "\\)")) %>% mutate("group"=case_when(group=="1"~"Mid-pandemic income loss",group=="2"~"No income loss"), WAVE = case_when( endsWith(label, "W64") ~ "W64", 
-  endsWith(label, "W83")~ "W83",endsWith(label, "W114")~ "W114"), "time"= case_when(
-           WAVE == "W64" ~ as.Date("2020-03-19"),
-           WAVE == "W83" ~ as.Date("2021-02-16"),
-           WAVE== "W114" ~ as.Date("2022-09-13"))) %>% mutate("mean"=as.numeric(mean),"SE"=as.numeric(SE))
-
-avg_plot %>% ggplot() + geom_point(aes(x=time,y=as.numeric(mean))) +
-  geom_errorbar(aes(x=time,ymin=mean-SE,ymax=mean+SE,linetype=group),width=20) +
-  geom_line(aes(x=time,y=as.numeric(mean),linetype=group,group=group))+ 
-  theme_bw() +
-  annotate('rect', xmin=as.Date("2020-03-24"), xmax=as.Date("2020-08-16"), ymin=4, ymax=6.5, alpha=.3, fill='gray') + 
-  ylab("Psychological distress score, mean (SE)") +
-  labs(title="survey weighted only",linetype=NULL) + scale_y_continuous(breaks=c(4,4.5,5,5.5,6)) +
-  scale_x_date(breaks=c(as.Date("2020-03-24"),as.Date("2020-08-16"),as.Date("2021-02-16"),as.Date("2022-09-13")),label=c("Mar. 2020","Aug. 2020","Feb. 2021","Sept. 2022")) + 
-  theme(#axis.text.x = element_text(angle = 90,size=rel(1.2),vjust=.5),
-        #legend.background = element_rect(linetype = 1, size = 0.5, colour = 1),
-        #legend.title= element_text(size=rel(.8)),
-        legend.margin=margin(t=-20), 
-        legend.text = element_text(size=rel(.75)),
-        legend.position = "bottom") + xlab("")#+
-#ggsave(file.path(fig_path,"avg_plot_ps_090623.pdf"),width=7,height=5)
-#analytic_long <- analytic %>% select(contains("MH_TRACK_int"),"QKEY","COVIDWORK_comp_bin_W72") %>% pivot_longer(cols=c("MH_TRACK_int_W64","MH_TRACK_int_W83","MH_TRACK_int_W114"),names_prefix="(MH_TRACK_int_)",names_to="WAVE",values_to="score") %>% mutate("time"= case_when(
-#           WAVE == "W64" ~ as.Date("2020-03-19"),
-#           WAVE == "W83" ~ as.Date("2021-02-16"),
-#           WAVE== "W114" ~ as.Date("2022-09-13"))) 
-
-#analytic_long %>% ggplot() + geom_violin(aes(x=time,y=score,group=interaction(time,COVIDWORK_comp_bin_W72),fill=factor(COVIDWORK_comp_bin_W72)))
-#geom_errorbar(aes(x=time,ymin=as.numeric(prev_lower),ymax=as.numeric(prev_upper),colour=vars),alpha=.5)
-
-#analytic_long %>% ggplot(aes(x=time,y=score,group=time,fill=factor(COVIDWORK_comp_bin_W72))) + geom_violinhalf(data = analytic_long %>% filter(COVIDWORK_comp_bin_W72 ==1))+ geom_violinhalf(data = analytic_long %>% filter(COVIDWORK_comp_bin_W72 ==0),flip=TRUE)
+message(results_plot_table[2,]$label)
+evalues.RR(est = results_plot_table[2,]$estimate, 
+           lo = results_plot_table[2,]$conf.low, 
+           hi = results_plot_table[2,]$conf.high)
 ```
 
-# plot of avg psychological distress WITH PS WEIGHTING
+### Sept 2022
 ```{r}
-mh_outcomes <- c("MH_TRACK_int_a_W64","MH_TRACK_int_a_W83","MH_TRACK_int_a_W114",
-                 "MH_TRACK_int_b_W64","MH_TRACK_int_b_W83","MH_TRACK_int_b_W114",
-                 "MH_TRACK_int_c_W64","MH_TRACK_int_c_W83","MH_TRACK_int_c_W114",
-                 "MH_TRACK_int_d_W64","MH_TRACK_int_d_W83","MH_TRACK_int_d_W114","MH_TRACK_int_e_W64","MH_TRACK_int_e_W83","MH_TRACK_int_e_W114")
-
-analytic <- analytic %>% mutate(across(contains("MH_TRACK_int"),as.numeric))
-
-analytic <- analytic %>% mutate(
-                                "comb_weight" = w.out_glm$weights * WEIGHT_W54_64_72_83_114) 
-
-ps_prev <- svydesign(~1, data = analytic, weights = ~comb_weight) %>% tbl_svysummary(by=group,label=propensity_vars_labels,include=all_of(c(mh_outcomes)),type = list(MH_TRACK_int_a_W64 ~ 'continuous',MH_TRACK_int_a_W83 ~ 'continuous',MH_TRACK_int_a_W114 ~ 'continuous',
-                                                                                                                                                                           MH_TRACK_int_c_W64 ~ 'continuous',MH_TRACK_int_c_W83 ~ 'continuous',MH_TRACK_int_c_W114 ~ 'continuous',
-                                                                                                                                                                           MH_TRACK_int_b_W64 ~ 'continuous',MH_TRACK_int_b_W83 ~ 'continuous',MH_TRACK_int_b_W114 ~ 'continuous',
-                                                                                                                                                                           MH_TRACK_int_d_W64 ~ 'continuous',MH_TRACK_int_d_W83 ~ 'continuous',MH_TRACK_int_d_W114 ~ 'continuous',
-                                                                                                                                                                           MH_TRACK_int_e_W64 ~ 'continuous',MH_TRACK_int_e_W83 ~ 'continuous',MH_TRACK_int_e_W114 ~ 'continuous'
-                                                                                                                                                                           ),statistic = list(all_continuous() ~ "{mean} ({mean.std.error})")) %>% add_p()
-
-ps_prev
-
-avg_plot <- ps_prev$table_body %>% select("label","stat_1","stat_2") %>% pivot_longer(cols = c("stat_1","stat_2"),names_to = "group",names_prefix="(stat_)") %>% separate(value, c("mean", "SE"), sep = "\\(") %>% mutate(SE= str_remove(SE, "\\)")) %>% mutate("group"=case_when(group=="1"~"Mid-pandemic income loss",group=="2"~"No income loss"), WAVE = case_when( endsWith(label, "W64") ~ "W64", 
-  endsWith(label, "W83")~ "W83",endsWith(label, "W114")~ "W114"), "time"= case_when(
-           WAVE == "W64" ~ as.Date("2020-03-19"),
-           WAVE == "W83" ~ as.Date("2021-02-16"),
-           WAVE== "W114" ~ as.Date("2022-09-13")),
-  "var" = case_when(startsWith(label,"MH_TRACK_int_a") ~ "Anxiety",
-                    startsWith(label,"MH_TRACK_int_b") ~ "Depression",
-                    startsWith(label,"MH_TRACK_int_c") ~ "Loneliness",
-                    startsWith(label,"MH_TRACK_int_d") ~ "Hopelessness",
-                    startsWith(label,"MH_TRACK_int_e") ~ "Sleep problems"
-    
-  )) %>% mutate("mean"=as.numeric(mean),"SE"=as.numeric(SE))
-
-avg_plot %>% ggplot() + geom_point(aes(x=time,y=as.numeric(mean))) +
-  geom_errorbar(aes(x=time,ymin=mean-SE,ymax=mean+SE,linetype=group),width=20) +
-  geom_line(aes(x=time,y=as.numeric(mean),linetype=group,group=group))+ 
-  theme_bw() +
-  #annotate('rect', xmin=as.Date("2020-03-24"), xmax=as.Date("2020-08-16"), ymin=4, ymax=6.5, alpha=.3, fill='gray') + 
-  facet_wrap(.~var) + 
-  ylab("Domain specific score, mean (SE)") +
-  labs(linetype=NULL) + #scale_y_continuous(breaks=c(4,4.5,5,5.5,6,6.5)) +
-  scale_x_date(breaks=c(as.Date("2020-03-24"),as.Date("2020-08-16"),as.Date("2021-02-16"),as.Date("2022-09-13")),label=c("Mar. 2020","Aug. 2020","Feb. 2021","Sept. 2022")) + 
-  theme(axis.text.x = element_text(angle = 90,size=rel(1.2),vjust=.5),
-        #legend.background = element_rect(linetype = 1, size = 0.5, colour = 1),
-        #legend.title= element_text(size=rel(.8)),
-        legend.margin=margin(t=-20), 
-        legend.text = element_text(size=rel(.75)),
-        legend.position = "bottom") + xlab("")#+
-ggsave(file.path(fig_path,"avg_plot_ps_domains.pdf"),width=7,height=5)
-
+message(results_plot_table[3,]$label)
+evalues.RR(est = results_plot_table[3,]$estimate,
+           lo = results_plot_table[3,]$conf.low,
+           hi = results_plot_table[3,]$conf.high)
 ```
+# Extras (not included in paper)
 
+## Supplemental comparison between logistic regression and GBM propensity score weights 
 
-# Supplemental : by type of loss
-
-```{r}
-library(VennDiagram)
-library(RColorBrewer)
-
-analytic %>% filter(COVIDWORK_comp_bin_W72==1)%>% tbl_summary(include=c("COVIDWORKR_a_W72","COVIDWORKR_b_W72","COVIDWORKO_a_W72","COVIDWORKO_b_W72"))
-
-myCol <- brewer.pal(4, "Pastel2")
-
-
-self_loss <- analytic %>% filter(COVIDWORKR_a_W72=="Yes, has happened")%>% pull(QKEY) 
-self_cut <- analytic  %>% filter(COVIDWORKR_b_W72=="Yes, has happened")%>% pull(QKEY)
-other_loss <- analytic  %>% filter(COVIDWORKO_a_W72=="Yes, has happened")%>% pull(QKEY) 
-other_cut <- analytic  %>% filter(COVIDWORKO_b_W72=="Yes, has happened")%>% pull(QKEY)
-
-venn.diagram(
-  x = list(self_loss,self_cut,other_loss,other_cut),
-  category.names = c("Self: Job loss (N=86)","Self: Income loss (N=191)", "Other in household: Job loss (N=128)","Other in household: Income loss (N=218)"),
-  # Circles
-        lwd = 2,
-        lty = 'blank',
-        fill = myCol,
-   # Numbers
-        cex = .6,
-        fontface = "bold",
-        fontfamily = "sans",
-        
-        # Set names
-        cat.cex = 0.6,
-        cat.fontface = "bold",
-        cat.default.pos = "outer",
-        cat.pos = c(-27, 27, 135,-140),
-        cat.dist = c(0.055, 0.055, -0.12,-0.1),
-        cat.fontfamily = "sans",
-  filename = 'jobloss_venn_diagramm.png',
-  output=TRUE
-)
-
-
-```
-
-
-
-# Supplemental comparison between logistic regression and GBM propensity score weights 
-
-```{r}
-f_ps <- as.formula(paste0("COVIDWORK_comp_bin_W72"," ~ ", paste0(propensity_vars, collapse= "+")))
+```{r fig.height=6,fig.width=7}
 f_ps
 
 w.out_gbm <- weightit(f_ps, data = analytic,
                         estimand= "ATT",method="gbm",stop.method="ks.mean",s.weights="WEIGHT_W54_64_72_83_114")
-
-w.out_glm <- weightit(f_ps, data = analytic,
-                        estimand= "ATT",method="ps",s.weights="WEIGHT_W54_64_72_83_114")
 
 love.plot(f_ps,
           data = analytic, 
@@ -720,80 +642,103 @@ love.plot(f_ps,
           var.names=love_labels,
           thresholds = c(m = .1),
           line = TRUE,s.weights="WEIGHT_W54_64_72_83_114")  + theme(legend.position=c(.8,.2), legend.title =element_text(size=rel(0.8)),legend.text=element_text(size=rel(0.75)), legend.background = element_rect(linetype = 1, size = 0.5, colour = 1))
-#ggsave(file.path(fig_path,"supplement_loveplot.png"),width=7,height=5)
+
 ```
 
-
-```{r}
-weight_table <- cbind("Log. Reg. PS" = w.out_glm$weights,
+## Extra weight tables / plots 
+```{r fig.width=7,fig.height=5}
+weight_table <- cbind("Logistic PS" = w.out_glm$weights,
                       "GBM PS"=w.out_gbm$weights,
                       "Survey" =analytic$WEIGHT_W54_64_72_83_114,
-                      "Log Reg PS * Survey"=analytic$WEIGHT_W54_64_72_83_114 * w.out_glm$weights,
+                      "Logistic PS * Survey"=analytic$WEIGHT_W54_64_72_83_114 * w.out_glm$weights,
                       "GBM PS * Survey"=analytic$WEIGHT_W54_64_72_83_114 * w.out_gbm$weights) %>% 
   as_tibble() %>% 
   mutate("Group"=analytic$group) %>%
-  pivot_longer(cols=c("Log. Reg. PS",
+  pivot_longer(cols=c("Logistic PS",
                       "GBM PS",
                       "Survey",
-                      "Log Reg PS * Survey","GBM PS * Survey"),
+                      "Logistic PS * Survey","GBM PS * Survey"),
                names_to = "Type",
                values_to="Weight") %>% 
-  mutate("Type"=factor(Type,levels=c("Log. Reg. PS","GBM PS","Survey","Log Reg PS * Survey","GBM PS * Survey")))
+  mutate("Type"=factor(Type,levels=c("Logistic PS","GBM PS","Survey","Logistic PS * Survey","GBM PS * Survey"))) 
 
 
-weight_table %>% ggplot() + geom_histogram(aes(x=Weight,fill=Group)) + facet_wrap(.~Type,ncol=3) + ylab("N") + theme(legend.position=c(.85,.35))
-
-#ggsave(file.path(fig_path,"supp_weight_dist_081623.png"))
-```
-
-
-```{r}
+weight_table %>% ggplot() + 
+  geom_histogram(aes(x=Weight,fill=Group)) + 
+  facet_wrap(.~Type,ncol=3) +
+  ylab("N") + theme_bw() + theme(legend.position=c(.85,.35))
 
 ```
 
+## plot of avg psychological distress (survey weighted, not ps weighted) over time with SE
+```{r fig.width=7,fig.height=5}
+prev <- svydesign(~1, data = analytic, weights = ~WEIGHT_W54_64_72_83_114) %>% 
+  tbl_svysummary(by=group,
+                 label=propensity_vars_labels,
+                 include=all_of(c(distress)),
+                 statistic = list(all_continuous() ~ "{mean} ({mean.std.error})"))
 
+prev$table_body %>% 
+  select("label","stat_1","stat_2") %>%
+  pivot_longer(cols = c("stat_1","stat_2"), names_to = "group",names_prefix="(stat_)") %>% 
+  separate(value, c("mean", "SE"), sep = "\\(") %>% mutate(SE= str_remove(SE, "\\)")) %>% 
+  mutate("group"=case_when(group=="1"~"Mid-pandemic income loss",group=="2"~"No income loss"), 
+         "WAVE" = case_when(
+           endsWith(label, "W64") ~ "W64", 
+           endsWith(label, "W83")~ "W83",
+           endsWith(label, "W114")~ "W114"),
+         "time"= case_when(
+           WAVE == "W64" ~ as.Date("2020-03-24"),
+           WAVE == "W83" ~ as.Date("2021-02-16"),
+           WAVE== "W114" ~ as.Date("2022-09-13"))) %>% 
+  mutate("mean"=as.numeric(mean),"SE"=as.numeric(SE)) %>% 
+  ggplot() + geom_point(aes(x=time,y=as.numeric(mean))) +
+    geom_errorbar(aes(x=time,ymin=mean-SE,ymax=mean+SE,linetype=group),width=20) +
+    geom_line(aes(x=time,y=as.numeric(mean),linetype=group,group=group))+ 
+    theme_bw() +
+    annotate('rect', xmin=as.Date("2020-03-24"), 
+             xmax=as.Date("2020-08-16"), ymin=4, ymax=6.5, alpha=.3, fill='gray') + 
+    ylab("Psychological distress score, mean (SE)") +
+    labs(title="Survey weighted (not PS weighted",linetype=NULL) + scale_y_continuous(breaks=c(4,4.5,5,5.5,6)) +
+    scale_x_date(breaks=c(as.Date("2020-03-24"),as.Date("2020-08-16"),as.Date("2021-02-16"),as.Date("2022-09-13")),
+                 label=c("Mar. 2020","Aug. 2020","Feb. 2021","Sept. 2022")) + 
+    theme(legend.margin=margin(t=-20), 
+          legend.text = element_text(size=rel(.75)),
+          legend.position = "bottom") + xlab("")
+```
+## Plot of avg psychological distress (survey weighted AND PS-weighted) over time, with SE
+```{r fig.width=7,fig.height=5}
+prev_ps <- design.main %>% 
+  tbl_svysummary(by=group,
+                 label=propensity_vars_labels,
+                 include=all_of(c(distress)),
+                 statistic = list(all_continuous() ~ "{mean} ({mean.std.error})"))
 
-#supplemental propensity score balance table
-```{r}
-
-design<-svydesign(id=~QKEY,weights=~WEIGHT_W54_64_72_83_114, data=analytic)
-m1 <- svyglm(as.formula(paste("COVIDWORK_comp_bin_W72 ~",paste(propensity_vars,collapse="+"))),design=design,family="binomial")
-job_loss_model_table <- tbl_regression(m1,exponentiate=TRUE,label=propensity_vars_labels)
-
-
-bal <- bal.tab(f_ps, data = analytic, 
-        weights = list(
-                       
-                       #gbm= w.out_gbm$weights,
-                      glm = w.out_glm$weights
-        ),
-        un=TRUE,
-        binary = "std",
-        disp.v.ratio = TRUE,s.weights="WEIGHT_W54_64_72_83_114")
-
-
-bal_tibble <- tibble("variable" = rownames(bal$Balance),"UnadjustedSMD"=bal$Balance$Diff.Un,"AdjustedSMD"=bal$Balance$Diff.Adj) %>% separate(variable,into=c("variable","label"),sep="(?<=_W(\\d\\d)_)") %>% mutate("variable" = substr(variable,1, nchar(variable)-1)) %>% mutate("UnadjustedSMD" = round(UnadjustedSMD,3),"AdjustedSMD" = round(AdjustedSMD,3)) %>% mutate(term = paste0(
-variable, label))%>% select(-variable,-label)
-
-
-#bal_tibble
-#data_weighted_svy <- survey::svydesign(~ 1, data = analytic) %>%
-#  tbl_svysummary(
-#    by = COVIDWORK_comp_W72,
-#    include = all_of(propensity_vars),
-#    statistic = list(all_categorical() ~ "{n_unweighted} ({p}%)"),
-#    label = propensity_vars_labels) %>%  modify_header(
-#    stat_1 = '**No** (N = {n_unweighted}, ({p}%)), N, %',
-#    stat_2 = '**Yes** (N = {n_unweighted}, ({p}%)), N, %') %>% modify_spanning_header(all_stat_cols()~
-#    '**Laid off, lost job, or experienced pay cut due to pandemic**') %>% add_overall(statistic = list(all_categorical() ~ "{n_unweighted} ({p}%)"))
-
-comb_table <- job_loss_model_table
-comb_table$table_body <- left_join(job_loss_model_table$table_body,bal_tibble,by="term")
-#comb_table$table_styling <- data_weighted_svy$table_styling
-
-comb_table$table_styling$header <- comb_table$table_styling$header %>% add_row(column="UnadjustedSMD",hide=FALSE,interpret_label="gt::md",align="center",label="Unadjusted",interpret_spanning_header="gt::md",spanning_header="**Standardized Mean Difference (SMD)**") %>% add_row(column="AdjustedSMD",hide=FALSE,interpret_label="gt::md",align="center",label="Adjusted",interpret_spanning_header="gt::md",spanning_header="**Standardized Mean Difference (SMD)**")
-#comb_table2 <- comb_table2 %>% modify_footnote(all_stat_cols() ~"N (unweighted), % (weighted). Positive SMD indicates more people in this category in the job loss category than the non-job loss group")
-#comb_table2 %>% as_gt() %>% gt::gtsave("balance_table072523.docx")
-#comb_table2
-comb_table
+prev_ps$table_body %>% 
+  select("label","stat_1","stat_2") %>%
+  pivot_longer(cols = c("stat_1","stat_2"), names_to = "group",names_prefix="(stat_)") %>% 
+  separate(value, c("mean", "SE"), sep = "\\(") %>% mutate(SE= str_remove(SE, "\\)")) %>% 
+  mutate("group"=case_when(group=="1"~"Mid-pandemic income loss",group=="2"~"No income loss"), 
+         "WAVE" = case_when(
+           endsWith(label, "W64") ~ "W64", 
+           endsWith(label, "W83")~ "W83",
+           endsWith(label, "W114")~ "W114"),
+         "time"= case_when(
+           WAVE == "W64" ~ as.Date("2020-03-24"),
+           WAVE == "W83" ~ as.Date("2021-02-16"),
+           WAVE== "W114" ~ as.Date("2022-09-13"))) %>% 
+  mutate("mean"=as.numeric(mean),"SE"=as.numeric(SE)) %>% 
+  ggplot() + geom_point(aes(x=time,y=as.numeric(mean))) +
+    geom_errorbar(aes(x=time,ymin=mean-SE,ymax=mean+SE,linetype=group),width=20) +
+    geom_line(aes(x=time,y=as.numeric(mean),linetype=group,group=group))+ 
+    theme_bw() +
+    annotate('rect', xmin=as.Date("2020-03-24"), 
+             xmax=as.Date("2020-08-16"), ymin=4, ymax=6.5, alpha=.3, fill='gray') + 
+    ylab("Psychological distress score, mean (SE)") +
+    labs(title="Survey and PS weighted",linetype=NULL) + scale_y_continuous(breaks=c(4,4.5,5,5.5,6)) +
+    scale_x_date(breaks=c(as.Date("2020-03-24"),as.Date("2020-08-16"),as.Date("2021-02-16"),as.Date("2022-09-13")),
+                 label=c("Mar. 2020","Aug. 2020","Feb. 2021","Sept. 2022")) + 
+    theme(legend.margin=margin(t=-20), 
+          legend.text = element_text(size=rel(.75)),
+          legend.position = "bottom") + xlab("")
 ```
