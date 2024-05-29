@@ -1,41 +1,53 @@
 ---
-title: "ADD COMPOSITE COLUMNS TO DATA SET"
-output: html_document
+title: "Add composite columns to data set"
+output:
+  html_document: default
+  pdf_document: default
 date: "2023-09-06"
 ---
 
 ```{r setup, include=FALSE}
-knitr::opts_chunk$set(echo = FALSE, warning=FALSE)
+knitr::opts_chunk$set(echo = TRUE, warning=FALSE,message=FALSE)
 ```
 
-```{r}
-#library(ggplot2)
-library(dplyr)
-library(tidyr)
+```{r libs}
+library(tidyverse)
 library(here)
 library(forcats)
+library(knitr)
+library(kableExtra)
 library(naniar)
 library(haven)
-#library(MatchIt)
-#library(table1)
 library(rlang)
-#library(devtools)
 library(pewmethods)
 library(foreign)
-#library(cobalt)
-#library(WeightIt)
-#library(survey)
 ```
 
 ```{r}
 W_wide <- read.spss(here("data","pewMH_dataset_merged.sav"), to.data.frame = TRUE) 
-
 ```
-#make composite variables
 
-# W64 job loss 
+# Income and job loss
+
+### W64 (March 2020) income and job loss
+
+*Create the composite category of self or household job or income loss from COVIDWORK_a \_W64 and COVIDWORK_b_W64*
+
+**COVIDWORK**
+
+For each of the following, indicate whether or not it is something that happened to YOU OR SOMEONE IN YOUR HOUSEHOLD because of the coronavirus outbreak:
+
+a.  Been laid off or lost a job
+
+b.  Had to take a cut in pay due to reduced hours or demand for your work
+
+RESPONSE OPTIONS
+
+-   Yes, has happened
+
+-   No, has not happened
+
 ```{r}
-#YOU OR SOMEONE IN YOUR HOUSEHOLD was LAID OFF OR LOST A JOB (a) OR HAD TO TAKE A PAY CUT DUE TO REDUCED HOURS OR DEMAND (b) because of the coronavirus outbreak
 
 W_wide <- W_wide %>% mutate(
   "COVIDWORK_W64_neither_na" = case_when(
@@ -53,35 +65,98 @@ W_wide <- W_wide %>% mutate(
     COVIDWORK_a_W64 == "Yes, has happened" | COVIDWORK_b_W64 == "Yes, has happened" ~ 1,
     TRUE ~ 0))
 
-W_wide %>% group_by(F_RESPONDED_W64,COVIDWORK_W64_both_not_na,COVIDWORK_W64_neither_na,COVIDWORK_comp_bin_W64,COVIDWORK_a_W64,COVIDWORK_b_W64) %>% summarize(n()) %>% arrange(desc(COVIDWORK_comp_bin_W64))
-                                                                   
-#W_wide %>% group_by(COVIDWORK_b_W64) %>% summarize(n())
-#W_wide %>% group_by(COVIDWORK_b_bin_W64) %>% summarize(n())
 ```
 
+### Check composite March 2020 job income loss
 
 ```{r}
 
+W_wide %>% rename("Resp_W64"=F_RESPONDED_W64,
+                  "Both_not_NA"=COVIDWORK_W64_both_not_na,
+                  "Neither_NA"=COVIDWORK_W64_neither_na,
+                  "composite_binary"=COVIDWORK_comp_bin_W64,
+                  "a_job_loss"=COVIDWORK_a_W64,
+                  "b_income_loss" = COVIDWORK_b_W64) %>%
+  group_by(Resp_W64,Neither_NA,composite_binary,a_job_loss,b_income_loss) %>% 
+  summarize(n()) %>%
+  arrange(desc(composite_binary)) %>% 
+  kable() %>%
+  kable_styling()
+```
+
+## W72 (August 2020) income and job loss
+
+COVIDWORK**R**: **Self** income or job loss
+
+For each of the following, indicate whether or not it is something that happened to YOU because of the coronavirus outbreak.
+
+a.  Been laid off or lost a job
+
+b.  Had to take a cut in pay due to reduced hours or demand for your work
+
+COVIDWORK**O**: **Household** income or job loss
+
+What about other people currently living in your household?
+
+a.  Been laid off or lost a job
+
+b.  Had to take a cut in pay due to reduced hours or demand for your work
+
+RESPONSE OPTIONS
+
+-   Yes, has happened
+
+-   No, has not happened
+
+-   Not applicable (not employed)
+
+### Self income or job loss
+
+*Create a composite category of self income or job loss from the self job loss (COVIDWORKR_a) and self pay cut (COVIDWORKR_b) variables, where missing data functions as a "no" if the other response is present*
+
+```{r}
 W_wide <- W_wide %>% mutate(
   "COVIDWORKR_comp_W72" =case_when(
-  is.na(COVIDWORKR_a_W72) & is.na(COVIDWORKR_b_W72) ~ "Refused/Missing",
-  COVIDWORKR_a_W72 == "Yes, has happened" | COVIDWORKR_b_W72== "Yes, has happened" ~ "Yes, has happened",
-  COVIDWORKR_a_W72 == "No, has not happened" | COVIDWORKR_b_W72== "No, has not happened" ~ "No, has not happened",
-  COVIDWORKR_a_W72 == "Not applicable (not employed)" | COVIDWORKR_b_W72== "Not applicable (not employed)" ~ "Not applicable (not employed)"
+    # Refused or missing if both a and b are NA
+    is.na(COVIDWORKR_a_W72) & is.na(COVIDWORKR_b_W72) ~ "Refused/Missing", 
+    # Yes if one is yes
+    COVIDWORKR_a_W72 == "Yes, has happened" | COVIDWORKR_b_W72== "Yes, has happened" ~ "Yes, has happened",
+    # No if one is no
+    COVIDWORKR_a_W72 == "No, has not happened" | COVIDWORKR_b_W72== "No, has not happened" ~ "No, has not happened",
+    # Otherwise, must be not applicable not employed
+    COVIDWORKR_a_W72 == "Not applicable (not employed)" | COVIDWORKR_b_W72== "Not applicable (not employed)" ~ "Not applicable (not employed)"
 ))
 
-W_wide %>% group_by(F_RESPONDED_W72,COVIDWORKR_comp_W72,COVIDWORKR_a_W72,COVIDWORKR_b_W72) %>% summarize(n())
+W_wide %>% group_by(F_RESPONDED_W72,COVIDWORKR_comp_W72,COVIDWORKR_a_W72,COVIDWORKR_b_W72) %>% summarize(n()) %>% kable() %>%
+  kable_styling()
+```
 
+### Household income or job loss
+
+*Create a composite category of household income or job loss from the household job loss (COVIDWORKO_a) and household pay cut (COVIDWORKO_b) variables, where missing data functions as a "no" if the other response is present*
+
+```{r}
 W_wide <- W_wide %>% mutate(
   "COVIDWORKO_comp_W72" =case_when(
-  is.na(COVIDWORKO_a_W72) & is.na(COVIDWORKO_b_W72) ~ "Refused/Missing",
-  COVIDWORKO_a_W72 == "Yes, has happened" | COVIDWORKO_b_W72== "Yes, has happened" ~ "Yes, has happened",
-  COVIDWORKO_a_W72 == "No, has not happened" | COVIDWORKO_b_W72== "No, has not happened" ~ "No, has not happened",
-  COVIDWORKO_a_W72 == "Not applicable (not employed)" | COVIDWORKO_b_W72== "Not applicable (not employed)" ~ "Not applicable (not employed)"
+     # Refused or missing if both a and b are NA
+    is.na(COVIDWORKO_a_W72) & is.na(COVIDWORKO_b_W72) ~ "Refused/Missing",
+     # Yes if one is yes
+    COVIDWORKO_a_W72 == "Yes, has happened" | COVIDWORKO_b_W72== "Yes, has happened" ~ "Yes, has happened",
+    # no if one is no
+    COVIDWORKO_a_W72 == "No, has not happened" | COVIDWORKO_b_W72== "No, has not happened" ~ "No, has not happened",
+     # Otherwise, must be not applicable not employed
+    COVIDWORKO_a_W72 == "Not applicable (not employed)" | COVIDWORKO_b_W72== "Not applicable (not employed)" ~ "Not applicable (not employed)"
 ))
 
-W_wide %>% group_by(F_RESPONDED_W72,COVIDWORKO_comp_W72,COVIDWORKO_a_W72,COVIDWORKO_b_W72) %>% summarize(n())
+W_wide %>% group_by(F_RESPONDED_W72,COVIDWORKO_comp_W72,COVIDWORKO_a_W72,COVIDWORKO_b_W72) %>% summarize(n()) %>% kable() %>%
+  kable_styling()
+```
 
+### Composites
+
+*Create a composite category of self or household income or job loss from the composites for self and household definied above, where missing data functions as a "no" if the other response is present*
+
+```{r}
 W_wide <- W_wide %>% mutate(
 "COVIDWORK_comp_W72" = case_when(
   COVIDWORKO_comp_W72 == "Refused/Missing" & COVIDWORKR_comp_W72=="Refused/Missing"~ "Refused/Missing",
@@ -92,8 +167,16 @@ W_wide <- W_wide %>% mutate(
   COVIDWORK_comp_W72 == "Yes, has happened" ~ 1,
   COVIDWORK_comp_W72 == "No, has not happened" ~ 0))
 
-W_wide %>% group_by(F_RESPONDED_W72,COVIDWORK_comp_W72,COVIDWORKR_comp_W72,COVIDWORKO_comp_W72) %>% summarize(n())
+W_wide %>% group_by(F_RESPONDED_W72,COVIDWORK_comp_W72,COVIDWORKR_comp_W72,COVIDWORKO_comp_W72) %>% summarize(n()) %>% kable() %>%
+  kable_styling()
+```
 
+```{r}
+W_wide  %>% filter(!is.na(F_RESPONDED_W72)) %>% group_by(COVIDWORK_comp_W72,COVIDWORKR_a_W72,COVIDWORKR_b_W72,COVIDWORKO_a_W72,COVIDWORKO_b_W72) %>% summarize(n()) %>% kable() %>%
+  kable_styling()
+```
+
+```{r}
 W_wide <- W_wide %>% mutate("group" = factor(case_when(
   COVIDWORK_comp_bin_W64 ==1 ~ "By Mar 24, 2020",
   COVIDWORK_comp_bin_W72 == 1 ~"Between Mar 24-Aug 16, 2020",
@@ -101,6 +184,29 @@ W_wide <- W_wide %>% mutate("group" = factor(case_when(
 ```
 
 # Covariates
+
+## Financial strain: Worry about bills (WORRY2c)
+
+*Recode to an indicator of whether they worry about paying bills everyday or almost everyday*
+
+**WORRY2c**
+
+How often, if ever, do you worry about each of the following?
+
+c.  Paying your bills
+
+RESPONSES:
+
+-   Every day
+
+-   Almost every day
+
+-   Sometimes
+
+-   Rarely
+
+-   Never
+
 ```{r}
 #FINANCIAL STRAIN: WORRYS EVERYDAY OR ALMOST EVERY DAY
 W_wide <- W_wide %>% mutate("WORRY2c_comp_W54" = fct_case_when(
@@ -108,14 +214,39 @@ W_wide <- W_wide %>% mutate("WORRY2c_comp_W54" = fct_case_when(
  WORRY2c_W54 == "Sometimes" | WORRY2c_W54 == "Rarely" | WORRY2c_W54 == "Never" ~ "No",
  TRUE ~ "Refused/Missing"))
 
-#W_wide %>% group_by(WORRY2c_comp_W54,WORRY2c_W54) %>% summarize(n())
+W_wide %>% group_by(WORRY2c_comp_W54,WORRY2c_W54) %>% summarize(n()) %>% kable() %>%
+  kable_styling()
 ```
 
+## Combined debt
+
+**Note:** reviewer feedback suggested that the correct term is "unsecured debt" not "insecure debt". This change has been make in labels in the `analysis.Rmd` file but the variable name (DEBT_INSECURE_W54) is unchanged. 
+
+
+*Create composite categories of secure debt(mortgage/home loans or car loans) and insecure debt (credit card, student loans, or medical debt)*
+
+DEBT
+
+Do you have any of the following types of loans or debt?
+
+a.  Credit card debt
+
+b.  Car loan
+
+c.  Student loans
+
+d.  A mortgage or a home loan
+
+e.  Debt from medical bills
+
+RESPONSE OPTIONS:
+
+-   Yes, have this
+-   No, do not have this
 
 ```{r}
 # COMBINED DEBT COLUMNS
-# secure debt: mortgage/home loans (d) or car loans (b)
-# insecure debt: credit card (a), student loans (c) or medical debt (e)),
+
 W_wide <- W_wide %>% 
   mutate("DEBT_SECURE_W54" = fct_case_when(
     DEBTb_W54 == "Yes, have this" | DEBTd_W54 == "Yes, have this" ~ "Yes",
@@ -124,18 +255,33 @@ W_wide <- W_wide %>%
    DEBTa_W54 == "Yes, have this" | DEBTc_W54 == "Yes, have this" | DEBTe_W54 == "Yes, have this"  ~ "Yes",
    DEBTa_W54 == "No, do not have this" | DEBTc_W54 == "No, do not have this" | DEBTe_W54 == "No, do not have this" ~ "No"))
 
-W_wide %>% group_by(DEBT_SECURE_W54,DEBTb_W54,DEBTd_W54) %>% summarize(n())
-W_wide %>% group_by(DEBT_INSECURE_W54,DEBTa_W54,DEBTc_W54,DEBTe_W54) %>% summarize(n())
+W_wide %>% group_by(DEBT_SECURE_W54,DEBTb_W54,DEBTd_W54) %>% summarize(n()) %>% kable() %>%
+  kable_styling()
+W_wide %>% group_by(DEBT_INSECURE_W54,DEBTa_W54,DEBTc_W54,DEBTe_W54) %>% summarize(n()) %>% kable() %>%
+  kable_styling()
 ```
+
+## Savings
+
+*Edit savings account question (FINANCEa_W54) to have yes and no response*
+
+FINANCE
+
+Do you have any of the following types of savings or investment accounts?
+
+a.  A savings account\
+    1 Yes, have this\
+    2 No, do not have this\*
 
 ```{r}
 W_wide <- W_wide %>% mutate(FINANCEa_W54=fct_case_when(FINANCEa_W54=="Yes, have this" ~ "Yes",
                                                         FINANCEa_W54=="No, do not have this" ~ "No"))
 
-W_wide %>% count(FINANCEa_W54)
 ```
 
+## Marital status
 
+Modify to combine divorced and separated
 
 ```{r}
 #COMBINE SEPARATED AND DIVORCED 
@@ -146,14 +292,39 @@ W_wide <- W_wide %>% mutate("F_MARITALMOD_W54" = fct_case_when(
 W_wide <- W_wide %>% mutate("F_MARITALMOD_W64" = fct_case_when(
   F_MARITAL_W64 == "Divorced" | F_MARITAL_W64 == "Separated" ~ "Divorced or Separated",
   TRUE ~  F_MARITAL_W64))
+
 ```
 
+# Psychological distress questions
 
-#MENTAL HEALTH OUTCOMES
+*Create integer columns for each* MH_TRACK *domain, 0-3 with 3 most frequent (reverse coded for hopefulness). Then create a composite category summing across the five domains.*
+
+MH_TRACK
+
+In the past 7 days, how often have you... [DISPLAY ITEMS IN ORDER].
+
+a.  Felt nervous, anxious, or on edge?
+
+b.  Felt depressed?
+
+c.  Felt lonely?
+
+d.  Felt hopeful about the future?
+
+e.  Had trouble sleeping?
+
+RESPONSE OPTIONS:
+
+-   Rarely or none of the time (less than 1 day)
+
+-   Some or a little of the time (1-2 days).
+
+-   Occasionally or a moderate amount of time (3-4 days).
+
+-   Most or all of the time (5-7 days).
 
 ```{r}
 W_wide <- W_wide %>% mutate(
-  
   any_MH_na_W64=is.na(MH_TRACK_a_W64) | is.na(MH_TRACK_b_W64) | is.na(MH_TRACK_c_W64) | is.na(MH_TRACK_d_W64) | is.na(MH_TRACK_e_W64),
   any_MH_na_W83=is.na(MH_TRACK_a_W83) | is.na(MH_TRACK_b_W83) | is.na(MH_TRACK_c_W83) | is.na(MH_TRACK_d_W83) | is.na(MH_TRACK_e_W83),
   any_MH_na_W114=is.na(MH_TRACK_a_W114) | is.na(MH_TRACK_b_W114) | is.na(MH_TRACK_c_W114) | is.na(MH_TRACK_d_W114) | is.na(MH_TRACK_e_W114),                     
@@ -209,18 +380,26 @@ W_wide <- W_wide %>% mutate(
   #MH_TRACK_int_W66= MH_TRACK_int_a_W66 + MH_TRACK_int_b_W66 + MH_TRACK_int_c_W66 + MH_TRACK_int_d_W66+ MH_TRACK_int_e_W66,
                             
   MH_TRACK_int_W83= MH_TRACK_int_a_W83 + MH_TRACK_int_b_W83 + MH_TRACK_int_c_W83 + MH_TRACK_int_d_W83+ MH_TRACK_int_e_W83,
-                             
-  MH_TRACK_int_W114= MH_TRACK_int_a_W114 + MH_TRACK_int_b_W114 + MH_TRACK_int_c_W114 + MH_TRACK_int_d_W114+ MH_TRACK_int_e_W114)
 
-W_wide %>% group_by(MH_TRACK_int_a_W64,MH_TRACK_a_W64) %>% summarize(n())
-W_wide %>% group_by(MH_TRACK_int_d_W64,MH_TRACK_d_W64) %>% summarize(n())
+MH_TRACK_int_W114= MH_TRACK_int_a_W114 + MH_TRACK_int_b_W114 + MH_TRACK_int_c_W114 + MH_TRACK_int_d_W114+ MH_TRACK_int_e_W114)
 ```
 
+### Check that it worked
 
 ```{r}
-#write.dta(W_wide, file.path("/Users","graceringlein","OneDrive - Johns Hopkins","PewMH","data","pewMH_dataset_merged_comp_090623.dta"))
-write_sav(W_wide, here("data","pewMH_dataset_merged_comp.sav"))
+W_wide %>% group_by(MH_TRACK_int_a_W64,MH_TRACK_a_W64) %>% summarize(n()) %>% kable() %>%
+  kable_styling()
+W_wide %>% group_by(MH_TRACK_int_c_W83,MH_TRACK_c_W83) %>% summarize(n()) %>% kable() %>%
+  kable_styling()
 ```
 
+Hope (d) is reverse coded:
+```{r}
+W_wide %>% group_by(MH_TRACK_int_d_W64,MH_TRACK_d_W64) %>% summarize(n()) %>% kable() %>%
+  kable_styling()
+```
 
+```{r}
 
+write_sav(W_wide, here("data","pewMH_dataset_merged_comp.sav"))
+```
