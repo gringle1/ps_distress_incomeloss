@@ -10,6 +10,8 @@ output:
 
 This file contains code used to merge the raw data from five waves of the Pew Research Center's American Trends Panel, for use in Ringlein GV, Ettman CK, and Stuart EA, 2024 ("Income or Job Loss and Psychological Distress During the COVID-19 Pandemic"). <doi:10.1001/jamanetworkopen.2024.24601>
 
+`make_composite_columns.Rmd` reads in the saved data from this file (`pewMH_dataset_merged.sav`) and creates composite columns, saving a new data set `pewMH_dataset_merged_comp.sav` which is used `analysis.Rmd`
+
 Notes (see manuscript and supplement for more details):
 
 -   Data downloaded from <https://www.pewresearch.org/american-trends-panel-datasets/>
