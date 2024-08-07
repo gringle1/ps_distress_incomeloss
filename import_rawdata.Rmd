@@ -1,96 +1,113 @@
 ---
-title: "Create merged data set"
-output:
-  pdf_document: default
+title: "Merge raw data from American Trends Panel"
+author: "Grace V Ringlein"
 date: "2023-08-16"
+output:
+  html_document:
+    df_print: paged
+  pdf_document: default
 ---
 
+This file contains code used to merge the raw data from five waves of the Pew Research Center's American Trends Panel, for use in Ringlein GV, Ettman CK, and Stuart EA, 2024 ("Income or Job Loss and Psychological Distress During the COVID-19 Pandemic"). <doi:10.1001/jamanetworkopen.2024.24601>
+
+Notes (see manuscript and supplement for more details):
+
+-   Data downloaded from <https://www.pewresearch.org/american-trends-panel-datasets/>
+
+-   Waves 64, 66, 83, 114 have mental health data used to construct psychological distress score.
+
+-   Wave 66 is not used in the final analysis.
+
+-   Wave 64 also has self or household income or job loss.
+
+-   Wave 72 has self or household income or job loss.
+
+-   Wave 54 has pre-pandemic finances.
+
 ```{r setup, include=FALSE}
-knitr::opts_chunk$set(echo = TRUE)
-library(haven)
-library(foreign)
+knitr::opts_chunk$set(echo = TRUE,warning=FALSE)
+library(haven) 
 library(labelled) 
-library("dplyr")
+library(dplyr)
 library(here)
 ```
 
-# Read in data
-Data downloaded from https://www.pewresearch.org/american-trends-panel-datasets/. 
-Waves 64, 66, 83, 114 have mental health data used to construct psychological distress score. Wave 66 is not used in the final analysis. 
-Wave 64 also has self or household income or job loss. 
-Wave 72 has self or household income or job loss. 
-Wave 54 has prepandemic finances.
+### Read in data for waves with mental health data: W64, W83, W114
 
-```{r read_data}
-rm(list=ls())
-#data_path <- file.path("/Users","graceringlein","OneDrive - Johns Hopkins","PewMH","data","rawdata")
-
+```{r read_MH_data}
 #READ IN DATA FOR MENTAL HEALTH WAVES
 W114 <- read_sav(here("data","ATP W114.sav"))
 W64 <- read_sav(here("data","ATP W64.sav"))
-#W66 <- read_sav(here("data","ATP W66.sav"))
 W83 <- read_sav(here("data","ATP W83.sav"))
-
-#READ IN WAVES WITH FINANCIAL COVARIATES
-W54 <- read_sav(here("data","ATP W54.sav"))
-#W65 <- read_sav(here("data","ATP W65.sav"))
-W72 <- read_sav(here("data","ATP W72.sav"))
-
 ```
 
+### Read in data for waves with pre-pandemic finances and job loss information
 
-```{r} 
-#RENAME COLUMNS THAT DON'T HAVE WAVE NUM
-W54 <- W54 %>% rename_at(vars(!matches("*(_W..)"),-QKEY), ~paste0(., '_W54'))
+```{r read_cov_data}
+W54 <- read_sav(here("data","ATP W54.sav"))
+W72 <- read_sav(here("data","ATP W72.sav"))
+```
+
+### Rename columns to have wave number
+
+Note: We do not rename columns that already have wave number or QKEY, the subject ID column, which is used for merging data sets
+
+```{r rename_cols}
+W54 <- W54 %>% rename_at(vars(!matches("*(_W..)"),-QKEY), ~paste0(., '_W54')) 
 W64 <- W64 %>% rename_at(vars(!matches("*(_W..)"),-QKEY), ~paste0(., '_W64'))
-#W65 <- W65 %>% rename_at(vars(!matches("*(_W..)"),-QKEY), ~paste0(., '_W65'))
-#W66 <- W66 %>% rename_at(vars(!matches("*(_W..)"),-QKEY), ~paste0(., '_W66'))
 W72 <- W72 %>% rename_at(vars(!matches("*(_W..)"),-QKEY), ~paste0(., '_W72'))
 W83 <- W83 %>% rename_at(vars(!matches("*(_W..)"),-QKEY), ~paste0(., '_W83'))
-W114 <- W114 %>% rename_at(vars(!matches("*(_W..)"),-QKEY), ~paste0(., '_W114')) 
+W114 <- W114 %>% rename_at(vars(!matches("*(_W..)"),-QKEY), ~paste0(., '_W114'))
+```
 
-#ADD RESPONDED COLUMN
+### Add responded column to indicate which participants were included in each wave once data is merged
+
+Note: some Waves already include such an indicators for a previous waves. For example, W114 has columns "F_RESPONDED_W64", "F_RESPONDED_W66", "F_RESPONDED_W83", F_RESPONDED_W114"
+
+```{r add_responded_col}
 W64$F_RESPONDED_W64 <- c(rep(1,nrow(W64)))
-#W66$F_RESPONDED_W66<- c(rep(1,nrow(W66)))
 W54$F_RESPONDED_W54 <- c(rep(1,nrow(W54)))
-#W65$F_RESPONDED_W65 <- c(rep(1,nrow(W65)))
 W72$F_RESPONDED_W72 <- c(rep(1,nrow(W72)))
 W83$F_RESPONDED_W83 <- c(rep(1,nrow(W83)))
 W114$F_RESPONDED_W114 <- c(rep(1,nrow(W114)))
-
 ```
 
+### Merge mental health data waves W64, W83, and W114 and remove any columns that are duplicated via merge
 
-```{r}
-#MERGE MH DATA AND REMOVE DUPLICATE COLUMNS
-W_MH <- W64 %>% #full_join(W66,by="QKEY",suffix=c("","_dup")) %>%
-  full_join(W83,by="QKEY",suffix=c("","_dup")) %>%
-  full_join(W114,by="QKEY",suffix=c("","_dup"))
+Note: Some columns are duplicated because later W114 data set contain the results of earlier waves' mental health questions
+
+```{r merge_MH}
+W_MH <- W64 %>%
+  full_join(W83,by="QKEY",suffix=c("","_dup_W83")) %>%
+  full_join(W114,by="QKEY",suffix=c("","_dup_W114"))
 
 W_MH <- W_MH %>% select(!contains("dup"))
+```
 
-#MERGE COVARIATE DATA
+### Merge mental health data with W54 (prepandemic finances) and W72 (mid pandemic job/income loss)
+
+```{r, merge_cov}
 W_cov <- W54 %>% 
-  #full_join(W65,by="QKEY",suffix=c("","_dup")) %>%
   full_join(W72, by="QKEY",suffix=c("","_dup")) 
-
 W_cov <- W_cov %>% select(!contains("dup"))
 
-#MERGE MH AND COV
 W <- left_join(W_MH,W_cov,by="QKEY",suffix=c("_dup",""))
 W <- W %>% select(!contains("dup"))
 ```
 
+### Reorder so QKEY and response indicator columns are first
+
 ```{r}
-# REORDER
+
 W <- W %>% relocate("QKEY",contains("RESPONDED"))
 ```
 
+### Select columns of interest
 
-```{r}
-#SELECT COLUMNS OF INTEREST
+Note: Not all of these columns are used in the final analysis
 
-W_wide <- W %>% select("QKEY",
+```{r select_cols}
+W_wide <- W %>% select("QKEY", 
                   contains("RESPONDED"),
                   contains("WEIGHT"),
                   
@@ -99,60 +116,37 @@ W_wide <- W %>% select("QKEY",
                   contains("RACE"),contains("HISP"),
                   contains("CREGION"),
                   contains("METRO"),
-                  contains("EDUCCAT"),#contains("EDUC_ACS"),
+                  contains("EDUCCAT"),
                   contains("MARITAL"),
                   contains("AGE"),
                   contains("CITIZEN"),
-                  contains("LANG"),
-                  contains("HH"),
                   contains("PARENT"),
                   
                   #MENTAL HEALTH
-                  contains("MH_TRACK"),contains("MHEALTH"),contains("MENTAL"),
-                  #contains("SATLIFE"), 
+                  contains("MH_TRACK"),contains("MENTAL"),
                   
                   #FINANCES
                   contains("INC_TIER2"),
-                  contains("INC_SDT"),
-                  contains("FIN_SIT"),contains("FINANCE"),contains("DEBT"),contains("BENEFITS"),contains("BILLSTYPICAL"),contains("BILLSNOW"),contains("EMERG"), contains("SAVINGS"),contains("INSURANCE"),contains("OWNRENTMOD"),
-                  contains("WORRY2"),contains("PERSFNC"),
+                  contains("FINANCE"),
+                  contains("DEBT"),
+                  contains("SAVINGS"),
+                  contains("WORRY2"),
                   
-                  #COVID EMPLOYMENT
-                  contains("E_COVID"),contains("COVID_INDVD"),contains("COVID_AIDPERS"), contains("POSTCOVID"), contains("COVIDCHG"),
+                  #EMPLOYMENT
                   contains("E3"),contains("E1"),contains("E2"),
-                  contains("COVIDWORK"),
-                  
-                  #INTERNET USE
-                  #contains("INTFREQ"),
-                  
-                  #POLITICAL
-                  #contains("PARTY"),
-                  
-                  #RELIGION
-                  #contains("RELIG"),contains("ATTEND"),
-                  #contains("RELIMP"),contains("PRAY"),contains("GOD"),contains("HGHPWR"),contains("COVIDSPIR"),contains("CHURCHPOL"), contains("RELIG_INFL"),contains("RELFAV"),contains("ESSENT"),
-                  
-                  #COMMUNITY
-                  #contains("COMTYPE2"),contains("COMATTACH"),
-                  #contains("SOCTRUST"), contains("GSSTRUST"),
-                  
-                  #VOLUNTEERING
-                  #contains("VOLSUM"),contains("VOL12"),
-                  
-                  #SCIENCE
-                  #contains("SC1"),contains("CONF"),contains("POLICY"),contains("FAUCI"),contains("COVID_INFECT"), contains("RQ2")
+                  contains("COVIDWORK")
                   )
-
-
 ```
 
-```{r}
-# REPLACE 99 WITH NA
+### Replace 99 (missing data indicator) with NA
+
+```{r replace_NA}
 W_wide <- W_wide %>% mutate(across(where(is.numeric),~na_if(.x,99)))
 ```
 
+### Add weights for 5 waves of data, sent to the team 8/15/2023
+
 ```{r}
-#WEIGHTS FROM PEW AS OF 8/15/2023
 W_wide <- tryCatch({
   weights <- read_sav(here("data","ATP_W54-64-72-83-114_weights.sav"))
   W_wide %>% left_join(weights,by="QKEY")
@@ -160,20 +154,11 @@ W_wide <- tryCatch({
    message(e)
    return(W_wide)
 }) 
-
-W_wide %>% select(contains("WEIGHT"))
-
 ```
 
+### Save data set
 
-```{r}
-#TO STATA FORMAT
-#write.dta(W_wide, file.path("/Users","graceringlein","OneDrive - Johns Hopkins","PewMH","data","pewMH_dataset_merged_090623.dta"))
-```
-
-
-```{r}
-# SAVE DATA
+```{r eval=FALSE}
 write_sav(W_wide, here("data","pewMH_dataset_merged.sav"))
 message(paste("Saved combined dataset to"),here("data","pewMH_dataset_merged.sav"))
 rm(list=ls())
