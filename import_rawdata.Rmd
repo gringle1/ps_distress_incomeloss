@@ -160,7 +160,7 @@ W_wide <- tryCatch({
 
 ### Save data set
 
-```{r eval=FALSE}
+```{r}
 write_sav(W_wide, here("data","pewMH_dataset_merged.sav"))
 message(paste("Saved combined dataset to"),here("data","pewMH_dataset_merged.sav"))
 rm(list=ls())
