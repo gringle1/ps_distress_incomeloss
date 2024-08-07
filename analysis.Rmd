@@ -472,7 +472,6 @@ t1 <- svydesign(~1, data = analytic, weights = ~WEIGHT_W54_64_72_83_114) %>%
 t1 %>% add_p(pvalue_fun = function(p) round(p,digits=2))
 ```
 
-
 ## Propensity scores
 
 ```{r}
@@ -719,9 +718,10 @@ diff_et4 <- rbind(r0,r1,r2) %>%
 
 diff_et4 
 ```
-### eTable 4: 
-```{r}
 
+### eTable 4: 
+
+```{r}
 et4 %>% left_join(diff_et4 ,by="Wave")
 ```
 

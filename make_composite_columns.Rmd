@@ -1,6 +1,13 @@
 ---
+<<<<<<< HEAD
 title: "Add composite columns to merged data set"
 author: "Grace V Ringlein"
+=======
+title: "Add composite columns to data set"
+output:
+  html_document: default
+  pdf_document: default
+>>>>>>> f3ff4eb3a3f7b814667b08a8d6a90fe50b7d42e8
 date: "2023-09-06"
 output:
   html_document: default
@@ -227,9 +234,16 @@ W_wide %>% group_by(WORRY2c_comp_W54,WORRY2c_W54) %>% summarize(n()) %>% kable()
 
 ## Combined debt
 
+<<<<<<< HEAD
 *Create composite categories of secure debt(mortgage/home loans or car loans) and insecure debt (credit card, student loans, or medical debt)*
 
 Note: the proper term is actually "unsecured debt" which is reflected in the manuscript and figures but not in the variable naming.
+=======
+**Note:** reviewer feedback suggested that the correct term is "unsecured debt" not "insecure debt". This change has been make in labels in the `analysis.Rmd` file but the variable name (DEBT_INSECURE_W54) is unchanged. 
+
+
+*Create composite categories of secure debt(mortgage/home loans or car loans) and insecure debt (credit card, student loans, or medical debt)*
+>>>>>>> f3ff4eb3a3f7b814667b08a8d6a90fe50b7d42e8
 
 DEBT
 
@@ -391,6 +405,7 @@ MH_TRACK_int_W114= MH_TRACK_int_a_W114 + MH_TRACK_int_b_W114 + MH_TRACK_int_c_W1
 ```
 
 ### Check that it worked
+<<<<<<< HEAD
 
 ```{r}
 W_wide %>% group_by(MH_TRACK_int_a_W64,MH_TRACK_a_W64) %>% summarize(n()) %>% kable() %>%
@@ -400,8 +415,26 @@ W_wide %>% group_by(MH_TRACK_int_c_W83,MH_TRACK_c_W83) %>% summarize(n()) %>% ka
 W_wide %>% group_by(MH_TRACK_int_d_W64,MH_TRACK_d_W64) %>% summarize(n()) %>% kable() %>%
   kable_styling()
 ```
+=======
+>>>>>>> f3ff4eb3a3f7b814667b08a8d6a90fe50b7d42e8
 
 ```{r}
-#write.dta(W_wide, file.path("/Users","graceringlein","OneDrive - Johns Hopkins","PewMH","data","pewMH_dataset_merged_comp_090623.dta"))
+W_wide %>% group_by(MH_TRACK_int_a_W64,MH_TRACK_a_W64) %>% summarize(n()) %>% kable() %>%
+  kable_styling()
+W_wide %>% group_by(MH_TRACK_int_c_W83,MH_TRACK_c_W83) %>% summarize(n()) %>% kable() %>%
+  kable_styling()
+```
+<<<<<<< HEAD
+=======
+
+Hope (d) is reverse coded:
+```{r}
+W_wide %>% group_by(MH_TRACK_int_d_W64,MH_TRACK_d_W64) %>% summarize(n()) %>% kable() %>%
+  kable_styling()
+```
+
+```{r}
+
 write_sav(W_wide, here("data","pewMH_dataset_merged_comp.sav"))
 ```
+>>>>>>> f3ff4eb3a3f7b814667b08a8d6a90fe50b7d42e8

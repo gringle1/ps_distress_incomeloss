@@ -1,11 +1,7 @@
 ---
-title: "Merge raw data from American Trends Panel"
+title: "Merge American Trends Panel Data for Analysis of Income loss and Psychological Distress"
 author: "Grace V Ringlein"
 date: "2023-08-16"
-output:
-  html_document:
-    df_print: paged
-  pdf_document: default
 ---
 
 This file contains code used to merge the raw data from five waves of the Pew Research Center's American Trends Panel, for use in Ringlein GV, Ettman CK, and Stuart EA, 2024 ("Income or Job Loss and Psychological Distress During the COVID-19 Pandemic"). <doi:10.1001/jamanetworkopen.2024.24601>
@@ -28,6 +24,7 @@ Notes (see manuscript and supplement for more details):
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE,warning=FALSE)
+<<<<<<< HEAD
 library(haven) 
 library(labelled) 
 library(dplyr)
@@ -55,7 +52,7 @@ W72 <- read_sav(here("data","ATP W72.sav"))
 Note: We do not rename columns that already have wave number or QKEY, the subject ID column, which is used for merging data sets
 
 ```{r rename_cols}
-W54 <- W54 %>% rename_at(vars(!matches("*(_W..)"),-QKEY), ~paste0(., '_W54')) 
+W54 <- W54 %>% rename_at(vars(!matches("*(_W..)"),-QKEY), ~paste0(., '_W54'))
 W64 <- W64 %>% rename_at(vars(!matches("*(_W..)"),-QKEY), ~paste0(., '_W64'))
 W72 <- W72 %>% rename_at(vars(!matches("*(_W..)"),-QKEY), ~paste0(., '_W72'))
 W83 <- W83 %>% rename_at(vars(!matches("*(_W..)"),-QKEY), ~paste0(., '_W83'))
@@ -75,7 +72,6 @@ W114$F_RESPONDED_W114 <- c(rep(1,nrow(W114)))
 ```
 
 ### Merge mental health data waves W64, W83, and W114 and remove any columns that are duplicated via merge
-
 Note: Some columns are duplicated because later W114 data set contain the results of earlier waves' mental health questions
 
 ```{r merge_MH}
@@ -100,16 +96,14 @@ W <- W %>% select(!contains("dup"))
 ### Reorder so QKEY and response indicator columns are first
 
 ```{r}
-
 W <- W %>% relocate("QKEY",contains("RESPONDED"))
 ```
 
 ### Select columns of interest
-
 Note: Not all of these columns are used in the final analysis
 
 ```{r select_cols}
-W_wide <- W %>% select("QKEY", 
+W_wide <- W %>% select("QKEY",
                   contains("RESPONDED"),
                   contains("WEIGHT"),
                   
@@ -159,7 +153,6 @@ W_wide <- tryCatch({
 ```
 
 ### Save data set
-
 ```{r}
 write_sav(W_wide, here("data","pewMH_dataset_merged.sav"))
 message(paste("Saved combined dataset to"),here("data","pewMH_dataset_merged.sav"))
